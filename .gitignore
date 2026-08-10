@@ -22,7 +22,8 @@ htmlcov/
 !.env.example
 
 # Editors
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 
 # Operating systems
