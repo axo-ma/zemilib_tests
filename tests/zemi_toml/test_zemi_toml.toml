@@ -2,7 +2,7 @@
 # Значение prefix каждой сессии хранится как проверяемая ссылка на Markdown-файл.
 
 non_text_reference = "@comp/.zemicomp"
-text_reference = "@comp/zemi_toml/prefixes/plain-text.txt"
+text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
 
 # ==============================================================================
 # СЕРВЕР: primary
@@ -34,14 +34,14 @@ text_reference = "@comp/zemi_toml/prefixes/plain-text.txt"
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "assistant"
-            prefix = "@comp/zemi_toml/prefixes/qwen-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/qwen-system.md"
 
         # ......................................................................
         # АССИСТЕНТ: json_converter
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "json_converter"
-            prefix = "@comp/zemi_toml/prefixes/qwen-json.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/qwen-json.md"
 
     # --------------------------------------------------------------------------
     # МОДЕЛЬ: smollm
@@ -63,14 +63,14 @@ text_reference = "@comp/zemi_toml/prefixes/plain-text.txt"
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "assistant"
-            prefix = "@comp/zemi_toml/prefixes/smollm-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/smollm-system.md"
 
         # ......................................................................
         # АССИСТЕНТ: document_classifier
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "document_classifier"
-            prefix = "@comp/zemi_toml/prefixes/smollm-classifier.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/smollm-classifier.md"
 
 # ==============================================================================
 # СЕРВЕР: secondary
@@ -102,14 +102,14 @@ text_reference = "@comp/zemi_toml/prefixes/plain-text.txt"
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "analyst"
-            prefix = "@comp/zemi_toml/prefixes/phi-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/phi-system.md"
 
         # ......................................................................
         # АССИСТЕНТ: reporter
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "reporter"
-            prefix = "@comp/zemi_toml/prefixes/phi-report.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/phi-report.md"
 
     # --------------------------------------------------------------------------
     # МОДЕЛЬ: llama
@@ -131,11 +131,11 @@ text_reference = "@comp/zemi_toml/prefixes/plain-text.txt"
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "document_assistant"
-            prefix = "@comp/zemi_toml/prefixes/llama-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/llama-system.md"
 
         # ......................................................................
         # АССИСТЕНТ: summarizer
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "summarizer"
-            prefix = "@comp/zemi_toml/prefixes/llama-summary.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/llama-summary.md"
