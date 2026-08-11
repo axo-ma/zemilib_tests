@@ -29,3 +29,22 @@ htmlcov/
 # Operating systems
 Thumbs.db
 .DS_Store
+
+# Isolated environments and package managers
+ENV/
+env/
+uv.exe
+uvw.exe
+uvx.exe
+
+# BAML generated client and local tooling
+baml_client/
+.baml/
+baml-cli.exe
+
+# Library caches
+.dspy_cache/
+.outlines/
+.fastembed_cache/
+.streamlit/
+.cache/
