@@ -21,11 +21,11 @@
 
         [[arsenal.llamas.models.assistants]]
             name = "assistant"
-            prefix = "@comp/zemi_toml/prefixes/qwen-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/qwen-system.md"
 
         [[arsenal.llamas.models.assistants]]
             name = "json_converter"
-            prefix = "@comp/zemi_toml/prefixes/qwen-json.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/qwen-json.md"
 
 [[arsenal.llamas]]
     name = "secondary"
@@ -48,8 +48,8 @@
 
         [[arsenal.llamas.models.assistants]]
             name = "analyst"
-            prefix = "@comp/zemi_toml/prefixes/phi-system.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/phi-system.md"
 
         [[arsenal.llamas.models.assistants]]
             name = "reporter"
-            prefix = "@comp/zemi_toml/prefixes/phi-report.md"
+            prefix = "@comp/tests/zemi_toml/prefixes/phi-report.md"
