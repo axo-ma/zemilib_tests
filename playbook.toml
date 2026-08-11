@@ -1,0 +1,21 @@
+[[arsenal.llamas]]
+name = "primary"
+llama_build = "llama:b9222"
+host = "127.0.0.1"
+port = 8080
+startup_timeout = 120.0
+
+    [[arsenal.llamas.models]]
+    name = "qwen"
+    source = "hf"
+    owner = "bartowski"
+    repository = "Qwen_Qwen3.5-4B-GGUF"
+    filename = "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+    alias = "qwen3.5-4b"
+    ctx_size = 4096
+    threads = 4
+    threads_batch = 4
+    reasoning = "off"
+
+        [[arsenal.llamas.models.assistants]]
+        name = "report_parser"
