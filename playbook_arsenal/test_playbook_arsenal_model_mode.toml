@@ -1,0 +1,55 @@
+# Конфигурация двух одностраничных llama-серверов для Model Mode.
+
+[[arsenal.llamas]]
+    name = "primary"
+    llama_build = "llama:b9222"
+    host = "127.0.0.1"
+    port = 8080
+    startup_timeout = 120.0
+
+    [[arsenal.llamas.models]]
+        name = "qwen"
+        source = "hf"
+        owner = "bartowski"
+        repository = "Qwen_Qwen3.5-4B-GGUF"
+        filename = "Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+        alias = "qwen3.5-4b"
+        ctx_size = 8192
+        threads = 8
+        threads_batch = 8
+        reasoning = "off"
+
+        [[arsenal.llamas.models.assistants]]
+            name = "assistant"
+            prefix = "@comp/zemi_toml/prefixes/qwen-system.md"
+
+        [[arsenal.llamas.models.assistants]]
+            name = "json_converter"
+            prefix = "@comp/zemi_toml/prefixes/qwen-json.md"
+
+[[arsenal.llamas]]
+    name = "secondary"
+    llama_build = "llama:b9222"
+    host = "127.0.0.1"
+    port = 8081
+    startup_timeout = 120.0
+
+    [[arsenal.llamas.models]]
+        name = "phi"
+        source = "hf"
+        owner = "bartowski"
+        repository = "Phi-3.5-mini-instruct-GGUF"
+        filename = "Phi-3.5-mini-instruct-Q4_K_M.gguf"
+        alias = "phi-3.5-mini"
+        ctx_size = 8192
+        threads = 8
+        threads_batch = 8
+        reasoning = "off"
+
+        [[arsenal.llamas.models.assistants]]
+            name = "analyst"
+            prefix = "@comp/zemi_toml/prefixes/phi-system.md"
+
+        [[arsenal.llamas.models.assistants]]
+            name = "reporter"
+            prefix = "@comp/zemi_toml/prefixes/phi-report.md"
