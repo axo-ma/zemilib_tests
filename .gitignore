@@ -21,7 +21,6 @@ htmlcov/
 
 # Editors
 .vscode/*
-!.vscode/settings.json
 .idea/
 
 # Operating systems
