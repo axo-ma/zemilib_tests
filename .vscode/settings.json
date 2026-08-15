@@ -1,12 +1,4 @@
 {
-    "python-envs.pythonProjects": [
-        {
-            "path": ".",
-            "envManager": "ms-python.python:venv",
-            "packageManager": "ms-python.python:pip"
-        }
-    ],
-    "python-envs.workspaceSearchPaths": [
-        "../_venvs/z260814-WPy64-312101"
-    ]
+    "python.defaultInterpreterPath": "${workspaceFolder}/../_venvs/z260814-WPy64-312101/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true
 }

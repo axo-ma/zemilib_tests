@@ -160,8 +160,8 @@ class PythonVenvTests(unittest.TestCase):
             json.dumps(
                 {
                     "editor.formatOnSave": True,
-                    "python.defaultInterpreterPath": "old",
-                    "python.terminal.activateEnvironment": True,
+                    "python-envs.pythonProjects": [{"path": "."}],
+                    "python-envs.workspaceSearchPaths": ["old"],
                 }
             ),
             encoding="utf-8",
@@ -173,21 +173,12 @@ class PythonVenvTests(unittest.TestCase):
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
         self.assertTrue(settings["editor.formatOnSave"])
         self.assertEqual(
-            settings["python-envs.pythonProjects"],
-            [
-                {
-                    "path": ".",
-                    "envManager": "ms-python.python:venv",
-                    "packageManager": "ms-python.python:pip",
-                }
-            ],
+            settings["python.defaultInterpreterPath"],
+            "${workspaceFolder}/../_venvs/z260814-WPy64-312101/Scripts/python.exe",
         )
-        self.assertEqual(
-            settings["python-envs.workspaceSearchPaths"],
-            ["../_venvs/z260814-WPy64-312101"],
-        )
-        self.assertNotIn("python.defaultInterpreterPath", settings)
-        self.assertNotIn("python.terminal.activateEnvironment", settings)
+        self.assertTrue(settings["python.terminal.activateEnvironment"])
+        self.assertNotIn("python-envs.pythonProjects", settings)
+        self.assertNotIn("python-envs.workspaceSearchPaths", settings)
 
     def test_each_public_operation_prints_its_action(self) -> None:
         venv = PythonVenv.standard(self.component)
