@@ -4,30 +4,19 @@ from zemi.arsenal.python import PythonVenv
 
 
 def initialize_component_python_venv() -> None:
-    # Стандартный общий venv ZEMI.
-    # Используйте его, если компоненту не нужны собственные пакеты.
-    venv = PythonVenv.standard()
-
-    # Для собственных пакетов или установочного кода замените строку выше:
-    #
-    # venv = PythonVenv.for_component(
-    #     component_name="my-component",
-    #     version="260814",
-    # )
-    #
-    # Меняйте version после изменения состава или настройки venv.
+    # C-bundle активируется и настраивается в @comp/00_init.toml.
+    # Python-код для добавления пакетов изменять не требуется.
+    venv = PythonVenv.from_config("@comp/00_init.toml")
 
     venv.create_if_missing()
     venv.install_zemi_packages()
 
-    # Пакеты компонента:
-    venv.install_packages(
-        # "requests>=2.32,<3",
-    )
+    venv.install_component_packages()
 
     # Дополнительный установочный код:
     # venv.run_script("@comp/install.py")
 
+    venv.finalize_install()
     venv.verify()
     venv.set_as_vscode_interpreter()
 
