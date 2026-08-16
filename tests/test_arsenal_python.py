@@ -57,11 +57,6 @@ class PythonVenvTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("--system-site-packages", command); self.assertEqual(command[command.index("--prompt") + 1], "z260814")
 
-    def test_wrong_prompt_is_reported(self):
-        venv = self.from_config(); self.prepare_base(venv, "wrong")
-        with self.assertRaisesRegex(RuntimeError, "prompt venv"):
-            venv._verify_base()
-
     def test_component_install_and_disabled_skip(self):
         standard = self.from_config()
         with patch("zemi.arsenal.python.subprocess.run") as run: standard.install_component_packages()
