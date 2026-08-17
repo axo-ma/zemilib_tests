@@ -20,7 +20,7 @@ htmlcov/
 !.env.example
 
 # Editors
-.vscode/*
+.vscode/
 .idea/
 
 # Operating systems

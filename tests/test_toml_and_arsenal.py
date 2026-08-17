@@ -84,12 +84,12 @@ class ArsenalObjectTreeTests(unittest.TestCase):
             assistant.prefix,
             "@comp/tests/zemi_toml/prefixes/qwen-system.md",
         )
-        self.assertIsInstance(assistant.libs, Libs)
-        self.assertFalse(hasattr(assistant, "clients"))
-        self.assertEqual(assistant.libs.server_url, "http://127.0.0.1:8080")
-        self.assertEqual(assistant.libs.openai_url, "http://127.0.0.1:8080/v1")
-        self.assertEqual(assistant.libs.model, "qwen3.5-4b")
-        self.assertEqual(assistant.libs.context_window, 8192)
+        self.assertIsInstance(assistant.clients, Libs)
+        self.assertFalse(hasattr(assistant, "libs"))
+        self.assertEqual(assistant.clients.server_url, "http://127.0.0.1:8080")
+        self.assertEqual(assistant.clients.openai_url, "http://127.0.0.1:8080/v1")
+        self.assertEqual(assistant.clients.model, "qwen3.5-4b")
+        self.assertEqual(assistant.clients.context_window, 8192)
 
     def test_each_assistant_has_own_libs_object(self) -> None:
         qwen = self.arsenal.llamas.primary.models.qwen
@@ -97,12 +97,12 @@ class ArsenalObjectTreeTests(unittest.TestCase):
         assistant = qwen.assistants.assistant
         json_converter = qwen.assistants.json_converter
 
-        self.assertIsNot(assistant.libs, json_converter.libs)
-        self.assertEqual(assistant.libs.server_url, json_converter.libs.server_url)
-        self.assertEqual(assistant.libs.model, json_converter.libs.model)
+        self.assertIsNot(assistant.clients, json_converter.clients)
+        self.assertEqual(assistant.clients.server_url, json_converter.clients.server_url)
+        self.assertEqual(assistant.clients.model, json_converter.clients.model)
         self.assertEqual(
-            assistant.libs.context_window,
-            json_converter.libs.context_window,
+            assistant.clients.context_window,
+            json_converter.clients.context_window,
         )
 
     def test_runtime_tree_wraps_but_does_not_replace_raw_config(self) -> None:
@@ -304,6 +304,86 @@ class ArsenalLazyActivationTests(unittest.TestCase):
             "http://127.0.0.1:8080/models/load",
         )
         self.assertEqual(json.loads(request.data), {"model": "qwen3.5-4b"})
+
+
+class LlmCuratedSetTests(unittest.TestCase):
+    ROUTER_PATH = "@comp/zemi/llm_curated_set_router_mode.toml"
+    MODEL_PATH = "@comp/zemi/llm_curated_set_model_mode.toml"
+    EXISTING_MODELS = {
+        "qwen35_4b": (
+            "Qwen_Qwen3.5-4B-GGUF",
+            "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        ),
+        "phi35_mini": (
+            "Phi-3.5-mini-instruct-GGUF",
+            "Phi-3.5-mini-instruct-Q4_K_M.gguf",
+        ),
+        "llama32_3b": (
+            "Llama-3.2-3B-Instruct-GGUF",
+            "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        ),
+        "smollm2_1_7b": (
+            "SmolLM2-1.7B-Instruct-GGUF",
+            "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        ),
+    }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.router = ArsenalSession(cls.ROUTER_PATH)
+        cls.model_mode = ArsenalSession(cls.MODEL_PATH)
+
+    @staticmethod
+    def _models(session: ArsenalSession) -> list[Model]:
+        return [model for llama in session.llamas for model in llama.models]
+
+    def test_files_parse_and_have_required_server_layout(self) -> None:
+        self.assertEqual(len(self.router.llamas), 1)
+        self.assertEqual(len(self.router.llamas[0].models), 12)
+        self.assertEqual(len(self.model_mode.llamas), 12)
+        self.assertTrue(
+            all(len(llama.models) == 1 for llama in self.model_mode.llamas)
+        )
+
+    def test_model_sets_and_identifiers_are_unique(self) -> None:
+        router_models = self._models(self.router)
+        model_mode_models = self._models(self.model_mode)
+        router_aliases = {model.alias for model in router_models}
+        model_mode_aliases = {model.alias for model in model_mode_models}
+
+        self.assertEqual(router_aliases, model_mode_aliases)
+        for models in (router_models, model_mode_models):
+            self.assertEqual(len({model.name for model in models}), 12)
+            self.assertEqual(len({model.alias for model in models}), 12)
+
+        ports = [llama.port for llama in self.model_mode.llamas]
+        self.assertEqual(len(set(ports)), 12)
+
+    def test_every_model_uses_non_thinking_q4_hugging_face_artifact(self) -> None:
+        for session in (self.router, self.model_mode):
+            for model in self._models(session):
+                artifact = f"{model.repository}/{model.filename}"
+                self.assertEqual(model.reasoning, "off")
+                self.assertEqual(model.source, "hf")
+                self.assertTrue(model.filename.endswith("Q4_K_M.gguf"))
+                self.assertNotIn("Base", artifact)
+                self.assertNotIn("Thinking", artifact)
+                self.assertEqual(len(model.assistants), 1)
+                self.assertEqual(model.assistants[0].name, "assistant")
+
+    def test_qwen25_is_coder_instruct(self) -> None:
+        model = self.router.llamas[0].models["qwen25_coder_3b"]
+        self.assertIn("Qwen2.5-Coder-3B-Instruct", model.repository)
+        self.assertIn("Qwen2.5-Coder-3B-Instruct", model.filename)
+
+    def test_existing_models_keep_verified_artifacts(self) -> None:
+        for session in (self.router, self.model_mode):
+            models = {model.name: model for model in self._models(session)}
+            for name, expected in self.EXISTING_MODELS.items():
+                self.assertEqual(
+                    (models[name].repository, models[name].filename),
+                    expected,
+                )
 
 if __name__ == "__main__":
     unittest.main()
