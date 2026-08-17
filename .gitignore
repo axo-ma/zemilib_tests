@@ -35,9 +35,6 @@ uvw.exe
 uvx.exe
 
 # BAML generated client and local tooling
-baml_client/
-.baml/
-baml-cli.exe
 
 # Library caches
 .dspy_cache/

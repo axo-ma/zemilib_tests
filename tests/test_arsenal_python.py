@@ -7,9 +7,16 @@ from uuid import uuid4
 
 from zemi import env
 from zemi.arsenal.python import PythonVenv
+from zemi.arsenal.python import IMPORTS, PACKAGES
 
 
 class PythonVenvTests(unittest.TestCase):
+    def test_removed_integrations_are_not_installed_or_verified(self):
+        joined = " ".join((*PACKAGES, *IMPORTS)).lower()
+        self.assertNotIn("baml", joined)
+        self.assertNotIn("llama-cpp-agent", joined)
+        self.assertNotIn("llama_cpp_agent", joined)
+
     def setUp(self):
         env.path.tmp.mkdir(parents=True, exist_ok=True)
         self.instance = env.path.tmp / f"arsenal-python-{uuid4().hex}"

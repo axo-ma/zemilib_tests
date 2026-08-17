@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from zemi import arsenal, env, toml
 from zemi.arsenal import ArsenalSession, Assistant, Llama, Model
-from zemi.arsenal.clients import Clients
+from zemi.arsenal.libs import Libs
 
 
 CONFIG_PATH = (
@@ -84,24 +84,25 @@ class ArsenalObjectTreeTests(unittest.TestCase):
             assistant.prefix,
             "@comp/tests/zemi_toml/prefixes/qwen-system.md",
         )
-        self.assertIsInstance(assistant.clients, Clients)
-        self.assertEqual(assistant.clients.server_url, "http://127.0.0.1:8080")
-        self.assertEqual(assistant.clients.openai_url, "http://127.0.0.1:8080/v1")
-        self.assertEqual(assistant.clients.model, "qwen3.5-4b")
-        self.assertEqual(assistant.clients.context_window, 8192)
+        self.assertIsInstance(assistant.libs, Libs)
+        self.assertFalse(hasattr(assistant, "clients"))
+        self.assertEqual(assistant.libs.server_url, "http://127.0.0.1:8080")
+        self.assertEqual(assistant.libs.openai_url, "http://127.0.0.1:8080/v1")
+        self.assertEqual(assistant.libs.model, "qwen3.5-4b")
+        self.assertEqual(assistant.libs.context_window, 8192)
 
-    def test_each_assistant_has_own_clients_object(self) -> None:
+    def test_each_assistant_has_own_libs_object(self) -> None:
         qwen = self.arsenal.llamas.primary.models.qwen
 
         assistant = qwen.assistants.assistant
         json_converter = qwen.assistants.json_converter
 
-        self.assertIsNot(assistant.clients, json_converter.clients)
-        self.assertEqual(assistant.clients.server_url, json_converter.clients.server_url)
-        self.assertEqual(assistant.clients.model, json_converter.clients.model)
+        self.assertIsNot(assistant.libs, json_converter.libs)
+        self.assertEqual(assistant.libs.server_url, json_converter.libs.server_url)
+        self.assertEqual(assistant.libs.model, json_converter.libs.model)
         self.assertEqual(
-            assistant.clients.context_window,
-            json_converter.clients.context_window,
+            assistant.libs.context_window,
+            json_converter.libs.context_window,
         )
 
     def test_runtime_tree_wraps_but_does_not_replace_raw_config(self) -> None:
