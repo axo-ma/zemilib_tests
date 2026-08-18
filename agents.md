@@ -1,78 +1,85 @@
-# Универсальный шаблон
+# General Instructions
 
-Не предполагай пути, зависимости, политику веток или поведение развёртывания, если они не указаны явно. Если обязательное значение неизвестно, сначала найди его в доступном контексте или запроси уточнение.
+Do not assume paths, dependencies, branch policies, or deployment behavior unless they are explicitly specified. If a required value is unknown, first find it in the available context or ask for clarification.
 
-## Пути в TOML
+## Paths in TOML
 
-Не используй абсолютные пути. Указывай пути только в одном из двух видов:
+Do not use absolute paths. Specify paths in only one of these two forms:
 
-- `@inst/…` — относительно корня ZEMI Instance.
-- `@comp/…` — относительно корня текущего ZEMI-компонента.
+- `@inst/…` — relative to the ZEMI Instance root.
+- `@comp/…` — relative to the current ZEMI Component root.
 
-Примеры: `@inst/pythons/WPy64-312101`, `@comp/context`.
+Examples: `@inst/pythons/WPy64-312101`, `@comp/context`.
 
-Используй `env.path` для работы с путями 
+Use `env.path` when working with paths.
 
-## Временные файлы и каталоги
+## Temporary files and directories
 
-Для всех временных файлов и каталогов внутри ZEMI используй только
-`env.path.tmp` (то есть `@inst/_tmp`). Перед использованием создай этот каталог,
-если он отсутствует. Не используй системный временный каталог по умолчанию.
+For all temporary files and directories inside ZEMI, use only `env.path.tmp`
+(that is, `@inst/_tmp`). Create this directory before use if it does not exist.
+Do not use the default system temporary directory.
 
-## Модели Hugging Face
+## Hugging Face models
 
-Идентификатор модели состоит из владельца, репозитория Hugging Face и точного файла GGUF.
+A model identifier consists of the owner, Hugging Face repository, and exact GGUF file.
 
-Пример: `hf:bartowski/Qwen_Qwen3.5-4B-GGUF/Qwen_Qwen3.5-4B-Q4_K_M.gguf`.
+Example: `hf:bartowski/Qwen_Qwen3.5-4B-GGUF/Qwen_Qwen3.5-4B-Q4_K_M.gguf`.
 
-Имя папки модели формируется по правилу:
+The model directory name follows this rule:
 
 `hf:{owner}/{repo}/{filename} → hf--{owner}--{repo}--{filename without .gguf}`
 
-Пример: `hf--bartowski--Qwen_Qwen3.5-4B-GGUF--Qwen_Qwen3.5-4B-Q4_K_M`.
+Example: `hf--bartowski--Qwen_Qwen3.5-4B-GGUF--Qwen_Qwen3.5-4B-Q4_K_M`.
 
-Храни модель в папке `@inst/_models/<имя_папки_модели>`, где имя папки получено из идентификатора по правилу выше.
+Store the model in `@inst/_models/<model_directory_name>`, where the directory
+name is derived from the identifier using the rule above.
 
-Для будущих моделей используй точный строчный префикс идентификатора `zemi:`, аналогично существующему префиксу `hf:`.
+For future models, use the exact lowercase identifier prefix `zemi:`, analogous
+to the existing `hf:` prefix.
 
 ## Llama CPP
 
-Идентификатор движка: `llama:b1234`; соответствующая папка: `llama--b1234`.
+Engine identifier: `llama:b1234`; corresponding directory: `llama--b1234`.
 
-`b1234` — версия сборки llama.cpp.
+`b1234` is the llama.cpp build version.
 
-Храни движок в папке `@inst/_llamas/<имя_папки_движка>`, где имя папки получено из идентификатора по правилу выше.
+Store the engine in `@inst/_llamas/<engine_directory_name>`, where the directory
+name is derived from the identifier using the rule above.
 
 ## Pythons
 
-Храни WinPython-среды в папке `@inst/_pythons/<имя_папки_Python>`.
+Store WinPython environments in `@inst/_pythons/<Python_directory_name>`.
 
-Все имена папок WinPython внутри ZEMI должны соответствовать единому стандарту именования.
-Текущая используемая WinPython — версия 3.12; её стандартное имя папки: `WPy64-312101`.
+All WinPython directory names inside ZEMI must follow a single naming standard.
+The current WinPython version is 3.12; its standard directory name is `WPy64-312101`.
 
-### Python-интерпретатор проекта
+### Project Python interpreter
 
-Для Python-команд используй интерпретатор, указанный в настройке VS Code
-`python.defaultInterpreterPath` текущего проекта. Тесты, скрипты, проверки
-импортов и управление зависимостями выполняй через этот интерпретатор.
+For Python commands, use the interpreter configured in the current project's
+VS Code `python.defaultInterpreterPath` setting. Run tests, scripts, import
+checks, and dependency management through that interpreter.
 
-## Стандартные маркеры
+## Standard markers
 
-- **ZEMI Instance** — корневой каталог установленного экземпляра платформы ZEMI.
-  Он содержит общие для компонентов ресурсы и служебные каталоги, например
-  `_models`, `_llamas`, `_tmp` и `_pythons`.
-- **ZEMI Component** — самостоятельный каталог проекта или функционального
-  компонента, который работает внутри ZEMI Instance. Один ZEMI Instance может
-  содержать несколько ZEMI Component.
-- Маркеры — это обычные файлы, расположенные непосредственно в корнях
-  соответствующих каталогов. Это не каталоги и не имена окружений.
-- Корень ZEMI Instance содержит ровно один файл-маркер в зависимости от среды:
-  `.zemiinst_dev`, `.zemiinst_exp` или `.zemiinst_prod`.
-- Корень ZEMI Component содержит файл-маркер `.zemicomp`.
+- **ZEMI Instance** — the root directory of an installed ZEMI platform instance.
+  It contains resources shared by components and service directories such as
+  `_models`, `_llamas`, `_tmp`, and `_pythons`.
+- **ZEMI Component** — a standalone project or functional component that runs
+  inside a ZEMI Instance. One ZEMI Instance can contain multiple ZEMI Components.
+- Markers are regular files placed directly in the roots of the corresponding
+  directories. They are not directories or environment names.
+- A ZEMI Instance root contains exactly one marker file depending on the
+  environment: `.zemiinst_dev`, `.zemiinst_exp`, or `.zemiinst_prod`.
+- A ZEMI Component root contains the `.zemicomp` marker file.
+- A directory that must be a separate root in a VS Code multi-root workspace
+  contains the `.zemiworkroot` marker file. A ZEMI Component does not need a
+  separate marker because `.zemicomp` is sufficient.
 
-Перед работой проверь, что каталоги существуют, а маркеры находятся непосредственно в ожидаемых корнях.
+Before starting work, verify that the directories exist and that the markers
+are located directly in the expected roots.
 
-## Git-правила
+## Git rules
 
-- Используй только стандартный Git, без GitHub CLI.
-- Используй ветку `main`.
+- Use standard Git only, without GitHub CLI.
+- Use the `main` branch.
+

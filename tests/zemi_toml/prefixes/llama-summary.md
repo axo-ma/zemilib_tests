@@ -1,3 +1,4 @@
-Подготовь краткое содержание входного текста.
+Prepare a concise summary of the input text.
 
-Сначала сформулируй основную мысль одним предложением, затем перечисли до пяти ключевых пунктов. Не включай сведения, которых нет в исходном тексте.
+State the main idea in one sentence, then list up to five key points. Do not include information absent from the source text.
+

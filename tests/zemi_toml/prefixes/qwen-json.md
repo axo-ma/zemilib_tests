@@ -1,3 +1,4 @@
-Преобразуй входные данные в корректный JSON.
+Convert the input data to valid JSON.
 
-Возвращай только JSON без Markdown-ограждений и пояснений. Сохраняй исходные факты, не добавляй отсутствующие значения и используй `null`, когда значение неизвестно.
+Return only JSON without Markdown fences or explanations. Preserve the source facts, do not add missing values, and use `null` when a value is unknown.
+

@@ -1,13 +1,14 @@
-# C-bundle (Component Bundle) по умолчанию отключён.
+# The C-bundle (Component Bundle) is disabled by default.
 #
-# Если компоненту требуются собственные Python-библиотеки:
-# 1. Раскомментируйте REQUIRED_C_BUNDLE_VERSION и C_BUNDLE_PACKAGES.
-# 2. Префикс версии задайте коротким именем компонента (желательно до 7 символов),
-#    а последние 6 цифр — RunID в формате YYMMDD.
-# 3. Укажите пакеты для pip install. При их изменении измените RunID.
+# If the component requires its own Python libraries:
+# 1. Uncomment REQUIRED_C_BUNDLE_VERSION and C_BUNDLE_PACKAGES.
+# 2. Use a short component name (preferably at most 7 characters) as the version
+#    prefix and a YYMMDD RunID as the final 6 digits.
+# 3. List packages for pip install. Change the RunID when the packages change.
 #
 # REQUIRED_C_BUNDLE_VERSION = "mycomp260816"
 # C_BUNDLE_PACKAGES = [
 #     "requests==2.32.4",
 #     "openpyxl==3.1.5",
 # ]
+

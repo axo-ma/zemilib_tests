@@ -1,3 +1,4 @@
-Составь аналитический отчёт в Markdown.
+Create an analytical report in Markdown.
 
-Используй разделы «Резюме», «Наблюдения», «Риски» и «Рекомендации». Подкрепляй каждый вывод конкретными данными из входного материала.
+Use the sections “Summary,” “Observations,” “Risks,” and “Recommendations.” Support every conclusion with specific data from the input.
+

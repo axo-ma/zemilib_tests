@@ -1,11 +1,11 @@
-# Пример конфигурации двух llama.cpp-серверов.
-# Значение prefix каждой сессии хранится как проверяемая ссылка на Markdown-файл.
+# Example configuration for two llama.cpp servers.
+# Each session prefix is stored as a validated reference to a Markdown file.
 
 non_text_reference = "@comp/.zemicomp"
 text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
 
 # ==============================================================================
-# СЕРВЕР: primary
+# SERVER: primary
 # ==============================================================================
 [[arsenal.llamas]]
     name = "primary"
@@ -15,7 +15,7 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
     startup_timeout = 120.0
 
     # --------------------------------------------------------------------------
-    # МОДЕЛЬ: qwen
+    # MODEL: qwen
     # --------------------------------------------------------------------------
     [[arsenal.llamas.models]]
         name = "qwen"
@@ -30,21 +30,21 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
         reasoning = "off"
 
         # ......................................................................
-        # АССИСТЕНТ: assistant
+        # ASSISTANT: assistant
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "assistant"
             prefix = "@comp/tests/zemi_toml/prefixes/qwen-system.md"
 
         # ......................................................................
-        # АССИСТЕНТ: json_converter
+        # ASSISTANT: json_converter
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "json_converter"
             prefix = "@comp/tests/zemi_toml/prefixes/qwen-json.md"
 
     # --------------------------------------------------------------------------
-    # МОДЕЛЬ: smollm
+    # MODEL: smollm
     # --------------------------------------------------------------------------
     [[arsenal.llamas.models]]
         name = "smollm"
@@ -59,21 +59,21 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
         reasoning = "off"
 
         # ......................................................................
-        # АССИСТЕНТ: assistant
+        # ASSISTANT: assistant
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "assistant"
             prefix = "@comp/tests/zemi_toml/prefixes/smollm-system.md"
 
         # ......................................................................
-        # АССИСТЕНТ: document_classifier
+        # ASSISTANT: document_classifier
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "document_classifier"
             prefix = "@comp/tests/zemi_toml/prefixes/smollm-classifier.md"
 
 # ==============================================================================
-# СЕРВЕР: secondary
+# SERVER: secondary
 # ==============================================================================
 [[arsenal.llamas]]
     name = "secondary"
@@ -83,7 +83,7 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
     startup_timeout = 120.0
 
     # --------------------------------------------------------------------------
-    # МОДЕЛЬ: phi
+    # MODEL: phi
     # --------------------------------------------------------------------------
     [[arsenal.llamas.models]]
         name = "phi"
@@ -98,21 +98,21 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
         reasoning = "off"
 
         # ......................................................................
-        # АССИСТЕНТ: analyst
+        # ASSISTANT: analyst
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "analyst"
             prefix = "@comp/tests/zemi_toml/prefixes/phi-system.md"
 
         # ......................................................................
-        # АССИСТЕНТ: reporter
+        # ASSISTANT: reporter
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "reporter"
             prefix = "@comp/tests/zemi_toml/prefixes/phi-report.md"
 
     # --------------------------------------------------------------------------
-    # МОДЕЛЬ: llama
+    # MODEL: llama
     # --------------------------------------------------------------------------
     [[arsenal.llamas.models]]
         name = "llama"
@@ -127,15 +127,16 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
         reasoning = "off"
 
         # ......................................................................
-        # АССИСТЕНТ: document_assistant
+        # ASSISTANT: document_assistant
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "document_assistant"
             prefix = "@comp/tests/zemi_toml/prefixes/llama-system.md"
 
         # ......................................................................
-        # АССИСТЕНТ: summarizer
+        # ASSISTANT: summarizer
         # ......................................................................
         [[arsenal.llamas.models.assistants]]
             name = "summarizer"
             prefix = "@comp/tests/zemi_toml/prefixes/llama-summary.md"
+

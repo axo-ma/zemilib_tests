@@ -61,7 +61,7 @@ class ArsenalLibsTests(unittest.TestCase):
             raise ModuleNotFoundError(name)
 
         with patch("zemi.arsenal.libs.import_module", side_effect=missing):
-            with self.assertRaisesRegex(LibDependencyError, "assistant.clients.outlines.model требуется пакет 'outlines'"):
+            with self.assertRaisesRegex(LibDependencyError, "assistant.clients.outlines.model requires package 'outlines'"):
                 _ = self.libs.outlines.model
 
     def test_real_types_cache_and_factory_makes_no_network_requests(self) -> None:
@@ -107,3 +107,4 @@ class ArsenalLibsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

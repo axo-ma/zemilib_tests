@@ -1,1 +1,2 @@
-Текст из TXT-файла.
+Text from a TXT file.
+

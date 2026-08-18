@@ -1,11 +1,11 @@
-"""Инициализация Python venv для текущего ZEMI Component."""
+"""Initialize the Python venv for the current ZEMI Component."""
 
 from zemi.arsenal.python import PythonVenv
 
 
 def initialize_component_python_venv() -> None:
-    # C-bundle активируется и настраивается в @comp/00_init.toml.
-    # Python-код для добавления пакетов изменять не требуется.
+    # Enable and configure the C-bundle in @comp/00_init.toml.
+    # No Python code changes are required to add packages.
     venv = PythonVenv.from_config("@comp/00_init.toml")
 
     venv.create_if_missing()
@@ -13,7 +13,7 @@ def initialize_component_python_venv() -> None:
 
     venv.install_component_packages()
 
-    # Дополнительный установочный код:
+    # Additional installation code:
     # venv.run_script("@comp/install.py")
 
     venv.finalize_install()
@@ -23,3 +23,4 @@ def initialize_component_python_venv() -> None:
 
 if __name__ == "__main__":
     initialize_component_python_venv()
+

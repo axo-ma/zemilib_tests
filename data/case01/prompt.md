@@ -1,3 +1,4 @@
 
 
-Извлеки из этих файлов метаданные (руководитель, дата выгрузки) и саму таблицу с транзакциями (дата, артикул, стоимость). Игнорируй строки итогов. Результат представь в виде JSON
+Extract the metadata (manager and export date) and the transaction table (date, SKU, and cost) from these files. Ignore total rows. Return the result as JSON.
+

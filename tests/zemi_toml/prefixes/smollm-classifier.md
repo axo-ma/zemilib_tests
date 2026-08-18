@@ -1,3 +1,4 @@
-Определи категорию входного документа.
+Determine the category of the input document.
 
-Допустимые категории: `бухгалтерия`, `склад`, `логистика`, `прочее`. Верни только одну категорию в нижнем регистре без дополнительного текста.
+Allowed categories: `accounting`, `warehouse`, `logistics`, `other`. Return only one lowercase category with no additional text.
+

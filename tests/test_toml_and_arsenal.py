@@ -43,7 +43,7 @@ class TomlTests(unittest.TestCase):
             "[[items]]\nname = 'same'\n[[items]]\nname = 'same'\n"
         )
 
-        with self.assertRaisesRegex(ValueError, "повторяющееся имя 'same'"):
+        with self.assertRaisesRegex(ValueError, "duplicate name 'same'"):
             toml.load(path)
 
     def test_load_rejects_missing_zemi_reference(self) -> None:
@@ -51,7 +51,7 @@ class TomlTests(unittest.TestCase):
             "reference = '@comp/does-not-exist-for-toml-test.txt'\n"
         )
 
-        with self.assertRaisesRegex(FileNotFoundError, "не существует"):
+        with self.assertRaisesRegex(FileNotFoundError, "does not exist"):
             toml.load(path)
 
     def _write_temp_toml(self, content: str) -> Path:
@@ -387,3 +387,4 @@ class LlmCuratedSetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
