@@ -77,7 +77,7 @@ class PythonVenvTests(unittest.TestCase):
         venv._z_done = True
         with patch("zemi.arsenal.python.subprocess.run", side_effect=subprocess.CalledProcessError(1, "pip")):
             with self.assertRaises(subprocess.CalledProcessError): venv.install_component_packages()
-        with self.assertRaisesRegex(RuntimeError, "незавершённую"): venv.finalize_install()
+        with self.assertRaisesRegex(RuntimeError, "incomplete installation"): venv.finalize_install()
         self.assertFalse((venv.root / "00_init.toml").exists())
 
     def test_finalize_and_verify_stamps_compare_toml_values(self):
@@ -86,16 +86,50 @@ class PythonVenvTests(unittest.TestCase):
         (venv.root / "zemi_python_venv.toml").write_text('REQUIRED_Z_BUNDLE_VERSION="z260814"\nREQUIRED_WINPYTHON_VERSION="WPy64-312101"\n', encoding="utf-8")
         self.prepare_base(venv)
         result = type("Result", (), {"stdout": str(venv._paths.base_python.parent) + "\n"})()
-        with patch("zemi.arsenal.python.subprocess.run", return_value=result): venv.verify()
+        with patch("zemi.arsenal.python.subprocess.run", return_value=result), patch("zemi.arsenal.python.sys.executable", str(venv.python)):
+            venv.verify()
         before = (venv.root / "00_init.toml").read_bytes()
-        with patch("zemi.arsenal.python.subprocess.run", return_value=result): venv.verify()
+        with patch("zemi.arsenal.python.subprocess.run", return_value=result), patch("zemi.arsenal.python.sys.executable", str(venv.python)):
+            venv.verify()
         self.assertEqual(before, (venv.root / "00_init.toml").read_bytes())
+
+    def test_missing_environment_message_includes_path_and_setup_steps(self):
+        venv = self.from_config()
+        expected = (
+            "The required Python environment does not exist:\n"
+            f"  {venv.python}\n\n"
+            "Run 00_init.py from the component root to create and configure this environment.\n"
+            "After initialization completes, select the environment above as the notebook kernel or use it to run the Python script, then try again."
+        )
+        with self.assertRaises(FileNotFoundError) as raised:
+            venv.verify()
+        self.assertEqual(str(raised.exception), expected)
+
+    def test_wrong_environment_message_includes_current_and_required_python(self):
+        venv = self.from_config()
+        self.prepare_base(venv)
+        current_python = self.component / "other" / "python.exe"
+        result = type("Result", (), {"stdout": str(venv._paths.base_python.parent) + "\n"})()
+        expected = (
+            "The current Python process is using the wrong environment.\n\n"
+            "Current Python:\n"
+            f"  {current_python.resolve()}\n\n"
+            "Required Python:\n"
+            f"  {venv.python.resolve()}\n\n"
+            "For a notebook, select the required Python environment as the kernel and run this cell again.\n"
+            "For a Python script, run the script with the required Python interpreter.\n"
+            "If the required environment is unavailable, run 00_init.py from the component root first."
+        )
+        with patch("zemi.arsenal.python.subprocess.run", return_value=result), patch("zemi.arsenal.python.sys.executable", str(current_python)):
+            with self.assertRaises(RuntimeError) as raised:
+                venv.verify()
+        self.assertEqual(str(raised.exception), expected)
 
     def test_changed_packages_make_c_stamp_stale(self):
         venv = self.from_config('REQUIRED_C_BUNDLE_VERSION="mycomp260816"\nC_BUNDLE_PACKAGES=["a==1"]\n')
         venv.root.mkdir(parents=True); shutil.copy2(self.config, venv.root / "00_init.toml")
         self.config.write_text('REQUIRED_C_BUNDLE_VERSION="mycomp260816"\nC_BUNDLE_PACKAGES=["a==2"]\n', encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "C-bundle устарел"): venv._verify_c_stamp()
+        with self.assertRaisesRegex(RuntimeError, "C-bundle is outdated"): venv._verify_c_stamp()
 
     def test_run_script_failure_propagates(self):
         venv = self.from_config('REQUIRED_C_BUNDLE_VERSION="mycomp260816"\nC_BUNDLE_PACKAGES=[]\n')
