@@ -326,6 +326,10 @@ class LlmCuratedSetTests(unittest.TestCase):
             "SmolLM2-1.7B-Instruct-GGUF",
             "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
         ),
+        "ling30_tiny": (
+            "Ling-3.0-tiny-GGUF",
+            "Ling-3.0-tiny-Q4_K_M.gguf",
+        ),
     }
 
     @classmethod
@@ -339,8 +343,8 @@ class LlmCuratedSetTests(unittest.TestCase):
 
     def test_files_parse_and_have_required_server_layout(self) -> None:
         self.assertEqual(len(self.router.llamas), 1)
-        self.assertEqual(len(self.router.llamas[0].models), 12)
-        self.assertEqual(len(self.model_mode.llamas), 12)
+        self.assertEqual(len(self.router.llamas[0].models), 13)
+        self.assertEqual(len(self.model_mode.llamas), 13)
         self.assertTrue(
             all(len(llama.models) == 1 for llama in self.model_mode.llamas)
         )
@@ -353,11 +357,17 @@ class LlmCuratedSetTests(unittest.TestCase):
 
         self.assertEqual(router_aliases, model_mode_aliases)
         for models in (router_models, model_mode_models):
-            self.assertEqual(len({model.name for model in models}), 12)
-            self.assertEqual(len({model.alias for model in models}), 12)
+            self.assertEqual(len({model.name for model in models}), 13)
+            self.assertEqual(len({model.alias for model in models}), 13)
 
         ports = [llama.port for llama in self.model_mode.llamas]
-        self.assertEqual(len(set(ports)), 12)
+        self.assertEqual(len(set(ports)), 13)
+        self.assertEqual(set(ports), set(range(8080, 8093)))
+
+    def test_every_server_uses_curated_llama_build(self) -> None:
+        for session in (self.router, self.model_mode):
+            for llama in session.llamas:
+                self.assertEqual(llama.llama_build, "llama:b10507")
 
     def test_every_model_uses_non_thinking_q4_hugging_face_artifact(self) -> None:
         for session in (self.router, self.model_mode):
@@ -376,6 +386,18 @@ class LlmCuratedSetTests(unittest.TestCase):
         self.assertIn("Qwen2.5-Coder-3B-Instruct", model.repository)
         self.assertIn("Qwen2.5-Coder-3B-Instruct", model.filename)
 
+    def test_ling30_tiny_parameters(self) -> None:
+        for session in (self.router, self.model_mode):
+            model = {model.name: model for model in self._models(session)}[
+                "ling30_tiny"
+            ]
+            self.assertEqual(model.owner, "bloomer010")
+            self.assertEqual(model.alias, "ling-3.0-tiny")
+            self.assertEqual(model.ctx_size, 4096)
+            self.assertEqual(model.threads, 4)
+            self.assertEqual(model.threads_batch, 4)
+            self.assertEqual(model.reasoning, "off")
+
     def test_existing_models_keep_verified_artifacts(self) -> None:
         for session in (self.router, self.model_mode):
             models = {model.name: model for model in self._models(session)}
@@ -387,4 +409,3 @@ class LlmCuratedSetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
