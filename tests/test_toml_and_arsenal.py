@@ -91,6 +91,16 @@ class ArsenalObjectTreeTests(unittest.TestCase):
         self.assertEqual(assistant.clients.model, "qwen3.5-4b")
         self.assertEqual(assistant.clients.context_window, 8192)
 
+    def test_default_config_uses_curated_router_set(self) -> None:
+        default = ArsenalSession()
+
+        self.assertEqual(
+            default.config_path,
+            "zemi/llm_curated_set_router_mode.toml",
+        )
+        ling = default.llamas.curated_router.models.ling30_tiny
+        self.assertEqual(ling.alias, "ling-3.0-tiny")
+
     def test_each_assistant_has_own_libs_object(self) -> None:
         qwen = self.arsenal.llamas.primary.models.qwen
 
