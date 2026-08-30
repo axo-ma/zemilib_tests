@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -172,15 +172,21 @@ enabled = false
         source = self.root / "one.ipynb"
         before = source.read_bytes()
         papermill = Mock()
-        papermill.execute_notebook.side_effect = (
-            lambda _source, output, **_kwargs: self.write_executed_notebook(output)
-        )
+
+        def execute(_source, output, **kwargs) -> None:
+            kwargs["stdout_file"].write("cell stdout\n")
+            kwargs["stderr_file"].write("cell stderr\n")
+            self.write_executed_notebook(output)
+
+        papermill.execute_notebook.side_effect = execute
         component = ZemiComponent()
 
-        terminal = StringIO()
+        terminal_stdout = StringIO()
+        terminal_stderr = StringIO()
         with (
             patch.dict(sys.modules, {"papermill": papermill}),
-            redirect_stdout(terminal),
+            redirect_stdout(terminal_stdout),
+            redirect_stderr(terminal_stderr),
         ):
             component.playbooks[0].run()
         component.close()
@@ -190,6 +196,10 @@ enabled = false
             str(component.playbooks[0].output_path),
             parameters={"model_name": "default", "nested": {"left": 1}},
             cwd=str(self.root),
+            progress_bar=True,
+            log_output=False,
+            stdout_file=terminal_stdout,
+            stderr_file=terminal_stderr,
         )
         self.assertEqual(source.read_bytes(), before)
         report = json.loads(component.report.path.read_text(encoding="utf-8"))
@@ -199,11 +209,13 @@ enabled = false
         self.assertEqual(report["playbooks"][0]["status"], "succeeded")
         self.assertEqual(report["playbooks"][0]["timed_cells"], 1)
         self.assertGreaterEqual(report["playbooks"][0]["duration_seconds"], 0)
-        terminal_text = terminal.getvalue()
+        terminal_text = terminal_stdout.getvalue()
         self.assertIn("ZEMI COMPONENT · PLAYBOOK START", terminal_text)
         self.assertIn("✓ PLAYBOOK COMPLETED · one.ipynb", terminal_text)
         self.assertIn("Parameters: params/default_params.toml", terminal_text)
         self.assertIn("Output    : .tmp/", terminal_text)
+        self.assertEqual(terminal_text.count("cell stdout"), 1)
+        self.assertEqual(terminal_stderr.getvalue().count("cell stderr"), 1)
         executed = json.loads(
             component.playbooks[0].output_path.read_text(encoding="utf-8")
         )
@@ -217,16 +229,20 @@ enabled = false
         papermill = Mock()
         component = ZemiComponent()
 
-        def fail_after_writing(_source, output, **_kwargs) -> None:
+        def fail_after_writing(_source, output, **kwargs) -> None:
+            kwargs["stdout_file"].write("stdout before failure\n")
+            kwargs["stderr_file"].write("stderr before failure\n")
             self.write_executed_notebook(output, duration=0.5)
             raise RuntimeError("execution failed")
 
         papermill.execute_notebook.side_effect = fail_after_writing
 
-        terminal = StringIO()
+        terminal_stdout = StringIO()
+        terminal_stderr = StringIO()
         with (
             patch.dict(sys.modules, {"papermill": papermill}),
-            redirect_stdout(terminal),
+            redirect_stdout(terminal_stdout),
+            redirect_stderr(terminal_stderr),
         ):
             try:
                 component.playbooks[0].run()
@@ -241,9 +257,11 @@ enabled = false
         self.assertEqual(report["error"]["message"], "execution failed")
         self.assertEqual(report["playbooks"][0]["status"], "failed")
         self.assertEqual(report["playbooks"][0]["timed_cells"], 1)
-        terminal_text = terminal.getvalue()
+        terminal_text = terminal_stdout.getvalue()
         self.assertIn("✗ PLAYBOOK FAILED · one.ipynb", terminal_text)
         self.assertIn("Error   : RuntimeError: execution failed", terminal_text)
+        self.assertEqual(terminal_text.count("stdout before failure"), 1)
+        self.assertEqual(terminal_stderr.getvalue().count("stderr before failure"), 1)
         executed = json.loads(
             component.playbooks[0].output_path.read_text(encoding="utf-8")
         )
