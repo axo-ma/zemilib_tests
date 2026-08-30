@@ -1,0 +1,11 @@
+[pipeline_params]
+
+[component_params]
+stop_on_error = true
+
+[[playbooks_params]]
+playbook_name = "playbook.ipynb"
+enabled = true
+
+    [playbooks_params.playbook_params]
+    model_name = "lfm2_350m"

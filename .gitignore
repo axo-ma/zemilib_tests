@@ -42,3 +42,6 @@ uvx.exe
 .fastembed_cache/
 .streamlit/
 .cache/
+
+# Component runs
+.tmp/

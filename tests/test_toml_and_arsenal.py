@@ -13,7 +13,7 @@ from zemi.arsenal.libs import Libs
 
 
 CONFIG_PATH = (
-    env.path.comp
+    env.path.comp.root
     / "tests"
     / "playbook_arsenal"
     / "test_playbook_arsenal_router_mode.toml"
@@ -131,6 +131,24 @@ class ArsenalObjectTreeTests(unittest.TestCase):
     def test_download_exists_only_on_arsenal_session(self) -> None:
         self.assertFalse(hasattr(arsenal, "download"))
         self.assertTrue(callable(ArsenalSession.download))
+
+    def test_model_lookup_activates_only_the_selected_model(self) -> None:
+        selected = self.arsenal.model("qwen")
+
+        self.assertEqual(selected.name, "qwen")
+
+    def test_model_lookup_reports_zero_and_ambiguous_matches(self) -> None:
+        with self.assertRaisesRegex(LookupError, "No Arsenal model"):
+            self.arsenal.model("missing")
+
+        duplicate_config = json.loads(json.dumps(self.config))
+        duplicate_config["arsenal"]["llamas"].append(
+            json.loads(json.dumps(duplicate_config["arsenal"]["llamas"][0]))
+        )
+        duplicate_config["arsenal"]["llamas"][1]["name"] = "secondary"
+        duplicate = ArsenalSession(duplicate_config)
+        with self.assertRaisesRegex(LookupError, "ambiguous across servers"):
+            duplicate.model("qwen")
 
     def test_arsenal_exposes_lifecycle(self) -> None:
         self.assertTrue(callable(arsenal.begin))
