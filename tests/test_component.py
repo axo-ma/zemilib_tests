@@ -6,6 +6,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import tomllib
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
@@ -17,7 +18,7 @@ from zemi import env
 from zemi.component import ZemiComponent
 
 
-PROJECT_ROOT = env.path.comp.root
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JOB_PATH = PROJECT_ROOT / "job.exp.py"
 
 
@@ -307,21 +308,18 @@ class ComponentPathTests(ComponentFixture):
 
 class JobLifecycleTests(unittest.TestCase):
     def test_successful_job_closes_component(self) -> None:
-        playbook = Mock(enabled=True)
-        component = Mock(playbooks=[playbook])
+        component = Mock()
 
         with patch("zemi.component.ZemiComponent", return_value=component):
             runpy.run_path(str(JOB_PATH), run_name="__main__")
 
-        playbook.run.assert_called_once_with()
-        component.report.record_failure.assert_not_called()
+        component.run.assert_called_once_with()
         component.close.assert_called_once_with()
 
     def test_failure_is_reported_closed_and_propagated(self) -> None:
         failure = RuntimeError("notebook failed")
-        playbook = Mock(enabled=True)
-        playbook.run.side_effect = failure
-        component = Mock(playbooks=[playbook])
+        component = Mock()
+        component.run.side_effect = failure
 
         with (
             patch("zemi.component.ZemiComponent", return_value=component),
@@ -329,7 +327,6 @@ class JobLifecycleTests(unittest.TestCase):
         ):
             runpy.run_path(str(JOB_PATH), run_name="__main__")
 
-        component.report.record_failure.assert_called_once_with(failure)
         component.close.assert_called_once_with()
 
     def test_job_failure_produces_nonzero_process_exit(self) -> None:
@@ -353,6 +350,12 @@ class ZemiComponent:
     def __init__(self, **kwargs):
         self.playbooks = [Playbook()]
         self.report = Report()
+    def run(self):
+        try:
+            self.playbooks[0].run()
+        except Exception as error:
+            self.report.record_failure(error)
+            raise
     def close(self):
         open("closed.txt", "w", encoding="utf-8").write("closed")
 """.lstrip(),
@@ -385,6 +388,38 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertEqual(len(cells), 1)
         self.assertEqual(cells[0]["metadata"].get("tags"), ["parameters"])
         self.assertIn('model_name = "lfm2_350m"', "".join(cells[0]["source"]))
+        tagged = [
+            cell for cell in notebook["cells"]
+            if "parameters" in cell.get("metadata", {}).get("tags", [])
+        ]
+        self.assertEqual(tagged, cells)
+
+    def test_template_style_output_parameters_example_has_no_required_tag(self) -> None:
+        notebook = json.loads((PROJECT_ROOT / "playbook.ipynb").read_text(encoding="utf-8"))
+        headings = [cell for cell in notebook["cells"] if cell.get("id") == "output-parameters-heading"]
+        outputs = [cell for cell in notebook["cells"] if cell.get("id") == "output-parameters"]
+        self.assertEqual(len(headings), 1)
+        self.assertIn("Output parameters", "".join(headings[0]["source"]))
+        self.assertEqual(len(outputs), 1)
+        source = "".join(outputs[0]["source"])
+        self.assertIn("from zemi.playbook import output_params", source)
+        self.assertIn("output_params({", source)
+        self.assertNotIn("tags", outputs[0]["metadata"])
+
+    def test_default_params_toml_parses_and_commented_sweep_is_inert(self) -> None:
+        path = PROJECT_ROOT / "params" / "default_params.toml"
+        text = path.read_text(encoding="utf-8")
+        with path.open("rb") as file:
+            params = tomllib.load(file)
+        self.assertEqual(len(params["playbooks_params"]), 1)
+        self.assertFalse(any(
+            isinstance(value, dict) and "each" in value
+            for value in params["playbooks_params"][0]["playbook_params"].values()
+        ))
+        self.assertIn("#     temperature = { each =", text)
+        self.assertIn("#     seed = { each =", text)
+        self.assertIn("#     stop_sequences =", text)
+        self.assertIn("# [[playbooks_params]]", text)
 
 
 if __name__ == "__main__":

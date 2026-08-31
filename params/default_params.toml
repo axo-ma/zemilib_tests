@@ -9,3 +9,23 @@ enabled = true
 
     [playbooks_params.playbook_params]
     model_name = "lfm2_350m"
+
+# Parameter sweep example (commented out, so the default run above is unchanged):
+# [[playbooks_params]]
+# playbook_name = "playbook.ipynb"
+# enabled = true
+#
+#     [playbooks_params.playbook_params]
+#     model_name = "lfm2_350m"
+#     temperature = { each = [0.0, 0.2, 0.5, 0.8] }
+#     seed = { each = [1, 2, 3, 4, 5] }
+#     stop_sequences = ["END", "STOP"] # Literal array: it is not expanded.
+#     options = { top_k = 20 }           # Literal table: it is not expanded.
+#
+# [[playbooks_params]]
+# playbook_name = "playbook_gbnf.ipynb"
+# enabled = true
+#
+#     [playbooks_params.playbook_params]
+#     model_name = "lfm2_350m"
+#     temperature = { each = [0.0, 0.5] }
