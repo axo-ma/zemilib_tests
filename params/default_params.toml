@@ -10,6 +10,29 @@ enabled = true
     [playbooks_params.playbook_params]
     model_name = "lfm2_350m"
 
+# Parameter bucket/ref example (fully commented out, so the default run is unchanged):
+# [param_buckets.model]
+# model_name = "lfm2_350m"
+# options = { top_k = 20, temperature = 0.2 }
+#
+# [param_buckets.generation]
+# seed = 42
+# stop_sequences = ["END", "STOP"]
+#
+# [param_buckets.combined]
+# __include__ = [{ ref = "param_buckets.model" }, { ref = "param_buckets.generation" }]
+# # Later buckets override earlier buckets; keys written here override every included bucket.
+# seed = 7
+#
+# [[playbooks_params]]
+# playbook_name = "playbook.ipynb"
+# enabled = true
+#
+#     [playbooks_params.playbook_params]
+#     __include__ = { ref = "param_buckets.combined" } # Insert every key from the resolved table.
+#     copied_options = { ref = "param_buckets.model.options" } # A ref may copy a table, array, or scalar.
+#     model_name = "local_override" # Local keys have the highest priority.
+
 # Parameter sweep example (commented out, so the default run above is unchanged):
 # [[playbooks_params]]
 # playbook_name = "playbook.ipynb"

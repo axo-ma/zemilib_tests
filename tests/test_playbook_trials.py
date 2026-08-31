@@ -145,6 +145,126 @@ mode = { select = ["fast", "safe"] }
                     ZemiComponent()
 
 
+class ParameterReferenceTests(ComponentFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.write_notebook("same.ipynb")
+
+    def component(self, declarations: str, params: str) -> ZemiComponent:
+        self.write_default(_config(f"{declarations.strip()}\n[[playbooks_params]]\nplaybook_name = \"same.ipynb\"\n[playbooks_params.playbook_params]\n{params.strip()}"))
+        return ZemiComponent()
+
+    def test_scalar_composite_and_recursive_nested_refs(self) -> None:
+        component = self.component('''
+[param_buckets]
+scalar = 7
+array = [1, 2]
+[param_buckets.options]
+top_k = 20
+[param_buckets.options.nested]
+label = "ok"
+''', '''
+scalar = { ref = "param_buckets.scalar" }
+array = { ref = "param_buckets.array" }
+options = { ref = "param_buckets.options" }
+[playbooks_params.playbook_params.deep]
+copied = { ref = "param_buckets.options.nested" }
+''')
+        playbook = component.playbooks[0]
+        self.assertEqual(playbook.params, {"scalar": 7, "array": [1, 2], "options": {"top_k": 20, "nested": {"label": "ok"}}, "deep": {"copied": {"label": "ok"}}})
+        self.assertEqual(playbook.resolved_params["scalar"]["refs"], ["param_buckets.scalar"])
+        self.assertEqual(playbook.resolved_params["deep"]["source"], "ref")
+        component.close()
+
+    def test_single_multiple_include_precedence_and_no_reserved_key(self) -> None:
+        component = self.component('''
+[param_buckets.model]
+model = "small"
+shared = "model"
+[param_buckets.generation]
+temperature = 0.5
+shared = "generation"
+''', '''
+__include__ = [{ ref = "param_buckets.model" }, { ref = "param_buckets.generation" }]
+shared = "local"
+''')
+        playbook = component.playbooks[0]
+        self.assertEqual(playbook.params, {"model": "small", "shared": "local", "temperature": 0.5})
+        self.assertNotIn("__include__", playbook.params)
+        self.assertEqual(playbook.resolved_params["temperature"]["source"], "include")
+        self.assertNotIn("shared", playbook.resolved_params)
+        component.close()
+
+    def test_nested_include_and_bucket_in_bucket(self) -> None:
+        component = self.component('''
+[param_buckets.base]
+a = 1
+[param_buckets.extended]
+__include__ = { ref = "param_buckets.base" }
+b = 2
+''', '''
+[playbooks_params.playbook_params.nested]
+__include__ = { ref = "param_buckets.extended" }
+b = 3
+''')
+        self.assertEqual(component.playbooks[0].params, {"nested": {"a": 1, "b": 3}})
+        self.assertEqual(component.playbooks[0].resolved_params["nested"]["refs"], ["param_buckets.extended", "param_buckets.base"])
+        component.close()
+
+    def test_refs_are_resolved_before_select_and_each(self) -> None:
+        self.write_default(_config('''
+[param_buckets]
+models = ["small", "large"]
+seeds = [1, 2]
+[[playbooks_params]]
+playbook_name = "same.ipynb"
+[playbooks_params.playbook_params]
+model = { select = [{ ref = "param_buckets.models" }, "fallback"] }
+seed = { each = [{ ref = "param_buckets.seeds" }, 3] }
+'''))
+        with patch("builtins.input", return_value="1"):
+            component = ZemiComponent()
+        self.assertEqual([p.params["seed"] for p in component.playbooks], [[1, 2], 3])
+        self.assertEqual(component.playbooks[0].params["model"], ["small", "large"])
+        self.assertEqual(component.playbooks[0].resolved_params["model"]["source"], "select")
+        self.assertEqual(component.playbooks[0].resolved_params["model"]["refs"], ["param_buckets.models"])
+        component.close()
+
+    def test_reference_validation_errors_are_contextual(self) -> None:
+        cases = [
+            ('[param_buckets]\nvalue = 1', 'x = { ref = "param_buckets.missing" }', "ref path.*was not found"),
+            ('[param_buckets]\nvalue = 1', 'x = { ref = "param_buckets.value", extra = 2 }', "ref wrapper must contain exactly one"),
+            ('[param_buckets]\nvalue = 1', '__include__ = { ref = "param_buckets.value" }', "does not resolve to a table"),
+            ('[param_buckets]\nvalue = 1', '__include__ = "bad"', "must be a ref wrapper"),
+            ('[param_buckets]\nvalue = 1', 'x = { ref = "param_buckets.value.child" }', "non-table"),
+        ]
+        for declarations, params, message in cases:
+            with self.subTest(params=params):
+                with self.assertRaisesRegex(ValueError, message):
+                    self.component(declarations, params)
+
+    def test_direct_and_include_cycles_are_rejected(self) -> None:
+        cases = [
+            ('[param_buckets]\na = { ref = "param_buckets.b" }\nb = { ref = "param_buckets.a" }', 'x = { ref = "param_buckets.a" }'),
+            ('[param_buckets.a]\n__include__ = { ref = "param_buckets.b" }\n[param_buckets.b]\n__include__ = { ref = "param_buckets.a" }', '__include__ = { ref = "param_buckets.a" }'),
+        ]
+        for declarations, params in cases:
+            with self.subTest(params=params), self.assertRaisesRegex(ValueError, "cyclic ref detected"):
+                self.component(declarations, params)
+
+    def test_papermill_receives_resolved_values_without_service_keys(self) -> None:
+        component = self.component('[param_buckets.common]\nvalue = 42', '__include__ = { ref = "param_buckets.common" }')
+        papermill = Mock()
+        papermill.execute_notebook.side_effect = lambda _source, output, **_kwargs: Path(output).write_text(json.dumps({"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}), encoding="utf-8")
+        with patch.dict(sys.modules, {"papermill": papermill}):
+            component.playbooks[0].run()
+        parameters = papermill.execute_notebook.call_args.kwargs["parameters"]
+        self.assertEqual(parameters, {"value": 42})
+        self.assertNotIn("__include__", json.dumps(parameters))
+        self.assertNotIn("ref", parameters)
+        component.close()
+
+
 class StructuredOutputTests(ComponentFixture):
     def setUp(self) -> None:
         super().setUp()

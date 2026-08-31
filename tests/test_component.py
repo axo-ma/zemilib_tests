@@ -419,6 +419,8 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertIn("#     temperature = { each =", text)
         self.assertIn("#     seed = { each =", text)
         self.assertIn("#     backend = { select =", text)
+        self.assertIn('#     __include__ = { ref = "param_buckets.combined" }', text)
+        self.assertIn('#     copied_options = { ref = "param_buckets.model.options" }', text)
         self.assertIn("#     stop_sequences =", text)
         self.assertIn("# [[playbooks_params]]", text)
 
