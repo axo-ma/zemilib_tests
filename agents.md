@@ -59,6 +59,14 @@ For Python commands, use the interpreter configured in the current project's
 VS Code `python.defaultInterpreterPath` setting. Run tests, scripts, import
 checks, and dependency management through that interpreter.
 
+## ZEMI library development and tests
+
+- Develop the `zemi` library in `zemilib_tests/zemi` and add its tests in
+  `zemilib_tests/tests`.
+- Do not add `zemi` library tests to `zemi_component_template`. That repository
+  is a consumer-facing component template, not the library development or test
+  location.
+
 ## Standard markers
 
 - **ZEMI Instance** — the root directory of an installed ZEMI platform instance.
@@ -82,4 +90,3 @@ are located directly in the expected roots.
 
 - Use standard Git only, without GitHub CLI.
 - Use the `main` branch.
-
