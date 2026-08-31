@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from zemi.component import ZemiComponent, _summarize_trials
+from zemi import env
 from zemi.playbook import PLAYBOOK_OUTPUT_MIME, output_params, validate_output_params
 
 from tests.test_component import ComponentFixture
@@ -82,7 +85,7 @@ mode = "literal"
         cases = [
             ('value = { each = [] }', "must not be empty"),
             ('value = { each = 1 }', "must be an array"),
-            ('value = { each = [1], extra = 2 }', "only the 'each' key"),
+            ('value = { each = [1], extra = 2 }', "exactly one mode key"),
         ]
         for declaration, message in cases:
             with self.subTest(declaration=declaration):
@@ -93,6 +96,52 @@ playbook_name = "same.ipynb"
 {declaration}
 '''))
                 with self.assertRaisesRegex(ValueError, message):
+                    ZemiComponent()
+
+    def test_select_and_each_resolve_in_toml_order_without_extra_trials(self) -> None:
+        self.write_default(_config('''
+[[playbooks_params]]
+playbook_name = "same.ipynb"
+[playbooks_params.playbook_params]
+model = { select = ["small", "large"] }
+temperature = { select = [0.1, 0.2] }
+seed = { each = [1, 2] }
+literal_array = ["A", "B"]
+literal_table = { top_k = 20 }
+
+[[playbooks_params]]
+playbook_name = "other.ipynb"
+[playbooks_params.playbook_params]
+mode = { select = ["fast", "safe"] }
+'''))
+        with patch("builtins.input", side_effect=["2", "1", "2"]) as prompt:
+            component = ZemiComponent()
+        self.assertEqual(prompt.call_count, 3)
+        self.assertEqual(len(component.playbooks), 3)
+        self.assertEqual([p.params["seed"] for p in component.playbooks[:2]], [1, 2])
+        self.assertTrue(all(p.params["model"] == "large" for p in component.playbooks[:2]))
+        self.assertTrue(all(p.params["temperature"] == 0.1 for p in component.playbooks[:2]))
+        self.assertEqual(component.playbooks[2].params["mode"], "safe")
+        self.assertEqual(component.playbooks[0].params["literal_array"], ["A", "B"])
+        self.assertEqual(component.playbooks[0].params["literal_table"], {"top_k": 20})
+        self.assertEqual(list(component.playbooks[0].resolved_params), ["model", "temperature", "seed"])
+        component.close()
+
+    def test_invalid_select_and_interactive_failures_name_context(self) -> None:
+        cases = [
+            ('value = { select = [] }', None, "must not be empty"),
+            ('value = { select = 1 }', None, "must be an array"),
+            ('value = { select = [1], extra = 2 }', None, "exactly one mode key"),
+            ('value = { each = [1], select = [2] }', None, "each/select"),
+            ('value = { select = [1, 2] }', "bad", "Invalid selection.*same\\.ipynb.*value"),
+            ('value = { select = [1, 2] }', EOFError(), "same\\.ipynb.*value.*interactive input is unavailable"),
+        ]
+        for declaration, input_result, message in cases:
+            with self.subTest(declaration=declaration, input_result=input_result):
+                self.write_default(_config(f'''\n[[playbooks_params]]\nplaybook_name = "same.ipynb"\n[playbooks_params.playbook_params]\n{declaration}\n'''))
+                effect = input_result if isinstance(input_result, BaseException) else None
+                kwargs = {"side_effect": effect} if effect else {"return_value": input_result}
+                with patch("builtins.input", **kwargs), self.assertRaisesRegex((ValueError, RuntimeError), message):
                     ZemiComponent()
 
 
@@ -119,7 +168,10 @@ playbook_name = "one.ipynb"
             with self.assertRaisesRegex(RuntimeError, "only once"):
                 output_params({"score": 2})
         display.assert_called_once_with(
-            {PLAYBOOK_OUTPUT_MIME: {"score": 1, "nested": [1, {"ok": True}]}},
+            {
+                PLAYBOOK_OUTPUT_MIME: {"score": 1, "nested": [1, {"ok": True}]},
+                "text/plain": '{\n  "score": 1,\n  "nested": [\n    1,\n    {\n      "ok": true\n    }\n  ]\n}',
+            },
             raw=True,
         )
 
@@ -151,7 +203,7 @@ playbook_name = "one.ipynb"
         component = self._write_output_notebook([])
         self.assertEqual(component.playbooks[0]._extract_output_params(), {})
         playbook = component.playbooks[0]
-        outputs = [{"output_type": "display_data", "metadata": {}, "data": {PLAYBOOK_OUTPUT_MIME: {"answer": 42, "items": [1, 2]}}}]
+        outputs = [{"output_type": "display_data", "metadata": {}, "data": {PLAYBOOK_OUTPUT_MIME: {"answer": 42, "items": [1, 2]}, "text/plain": "not JSON and ignored"}}]
         document = json.loads(playbook.output_path.read_text(encoding="utf-8"))
         document["cells"][0]["outputs"] = outputs
         playbook.output_path.write_text(json.dumps(document), encoding="utf-8")
@@ -222,8 +274,11 @@ playbook_name = "two.ipynb"
         self.assertEqual([t["status"] for t in report["trials"]], ["succeeded", "succeeded"])
         self.assertEqual(report["trials"][0]["output_params"]["nested"]["value"], dangerous)
         html = component.report.html_path.read_text(encoding="utf-8")
-        for section in ("Overview", "Summary", "Runs", "Outputs", "Errors"):
+        for section in ("Overview", "Runs", "Summary", "Run details", "Errors"):
             self.assertIn(f">{section}<", html)
+        positions = [html.index(f">{section}<") for section in ("Overview", "Runs", "Summary", "Run details", "Errors")]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn(">Outputs<", html)
         self.assertNotIn("https://", html)
         self.assertNotIn("http://", html)
         self.assertNotIn(dangerous, html)
@@ -235,23 +290,54 @@ playbook_name = "two.ipynb"
         self.assertIn('id="parameter-value"', html)
         self.assertFalse((component.run_directory / ".report.json.tmp").exists())
 
-    def test_summary_ignores_seed_and_aggregates_boolean_numeric_outputs(self) -> None:
+    def test_summary_contains_only_counts_and_trial_ids(self) -> None:
         trials = [
-            {"playbook_name": "one.ipynb", "status": "succeeded", "input_params": {"model": "m", "seed": 1}, "output_params": {"ok": True, "score": 1, "label": "a", "nested": [1]}},
-            {"playbook_name": "one.ipynb", "status": "succeeded", "input_params": {"model": "m", "seed": 2}, "output_params": {"ok": False, "score": 3, "label": "b", "nested": [2]}},
-            {"playbook_name": "one.ipynb", "status": "failed", "input_params": {"model": "m", "seed": 3}, "output_params": {}},
+            {"trial_id": "t1", "status": "succeeded", "input_params": {"seed": 1}, "output_params": {"score": 1}},
+            {"trial_id": "t2", "status": "succeeded", "input_params": {"seed": 2}, "output_params": {"score": 3}},
+            {"trial_id": "t3", "status": "failed", "input_params": {"seed": 3}, "output_params": {}},
         ]
         summary = _summarize_trials(trials)
-        self.assertEqual(len(summary), 1)
-        group = summary[0]
-        self.assertEqual(group["input_params"], {"model": "m"})
-        self.assertEqual((group["total"], group["succeeded"], group["failed"]), (3, 2, 1))
-        self.assertEqual(group["output_aggregates"]["ok"]["true_count"], 1)
-        self.assertEqual(group["output_aggregates"]["ok"]["true_rate"], 0.5)
-        self.assertEqual(group["output_aggregates"]["score"]["mean"], 2.0)
-        self.assertEqual(group["output_aggregates"]["score"]["stddev"], 1.0)
-        self.assertNotIn("label", group["output_aggregates"])
-        self.assertNotIn("nested", group["output_aggregates"])
+        self.assertEqual(summary["counts"], {"total": 3, "succeeded": 2, "failed": 1, "running": 0})
+        self.assertEqual(summary["trial_ids"]["total"], ["t1", "t2", "t3"])
+        self.assertEqual(summary["trial_ids"]["succeeded"], ["t1", "t2"])
+        self.assertEqual(summary["trial_ids"]["failed"], ["t3"])
+        self.assertNotIn("input_params", json.dumps(summary))
+        self.assertNotIn("output_aggregates", json.dumps(summary))
+
+    def test_terminal_lists_only_resolved_parameter_origins(self) -> None:
+        self.write_default(_config('''
+[[playbooks_params]]
+playbook_name = "one.ipynb"
+[playbooks_params.playbook_params]
+selected = { select = ["x", "y"] }
+swept = { each = [3] }
+literal = "quiet"
+'''))
+        with patch("builtins.input", return_value="2"):
+            component = ZemiComponent()
+        output = StringIO()
+        with redirect_stdout(output):
+            component.playbooks[0]._print_start()
+        text_output = output.getvalue()
+        self.assertIn(component.playbooks[0].trial_id, text_output)
+        self.assertIn('selected [select] = "y"', text_output)
+        self.assertIn("swept [each] = 3", text_output)
+        self.assertNotIn("literal =", text_output)
+        component.close()
+
+    def test_complete_marker_appears_only_after_close_for_success_and_failure(self) -> None:
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                env_path = None
+                component = self._two_playbooks(False)
+                env_path = component.run_directory
+                self.assertFalse((env_path / "complete").exists())
+                if failed:
+                    component.report.record_failure(RuntimeError("recorded"))
+                component.close()
+                self.assertTrue((env_path / "complete").is_file())
+                self.assertEqual((env_path / "complete").read_bytes(), b"")
+                env.path.comp._runid = None
 
 
 if __name__ == "__main__":

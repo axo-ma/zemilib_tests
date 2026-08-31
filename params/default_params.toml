@@ -17,10 +17,11 @@ enabled = true
 #
 #     [playbooks_params.playbook_params]
 #     model_name = "lfm2_350m"
+#     backend = { select = ["cpu", "gpu"] } # Interactive: choose exactly one value; this does not create trials.
 #     temperature = { each = [0.0, 0.2, 0.5, 0.8] }
 #     seed = { each = [1, 2, 3, 4, 5] }
-#     stop_sequences = ["END", "STOP"] # Literal array: it is not expanded.
-#     options = { top_k = 20 }           # Literal table: it is not expanded.
+#     stop_sequences = ["END", "STOP"] # One literal array, passed whole to the notebook; it does not create two trials.
+#     options = { top_k = 20 }           # One literal inline table/dict, passed whole to the notebook; it does not create trials.
 #
 # [[playbooks_params]]
 # playbook_name = "playbook_gbnf.ipynb"

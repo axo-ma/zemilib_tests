@@ -418,6 +418,7 @@ class ComponentConventionTests(unittest.TestCase):
         ))
         self.assertIn("#     temperature = { each =", text)
         self.assertIn("#     seed = { each =", text)
+        self.assertIn("#     backend = { select =", text)
         self.assertIn("#     stop_sequences =", text)
         self.assertIn("# [[playbooks_params]]", text)
 
