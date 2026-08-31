@@ -4,6 +4,9 @@
 non_text_reference = "@comp/.zemicomp"
 text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
 
+[arsenal]
+mode = "router"
+
 # ==============================================================================
 # SERVER: primary
 # ==============================================================================
@@ -139,4 +142,3 @@ text_reference = "@comp/tests/zemi_toml/prefixes/plain-text.txt"
         [[arsenal.llamas.models.assistants]]
             name = "summarizer"
             prefix = "@comp/tests/zemi_toml/prefixes/llama-summary.md"
-

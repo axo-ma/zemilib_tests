@@ -195,6 +195,47 @@ shared = "local"
         self.assertNotIn("shared", playbook.resolved_params)
         component.close()
 
+    def test_component_arsenal_include_allows_local_lifecycle_override(self) -> None:
+        component = self.component('''
+[component_params.arsenal]
+arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"
+arsenal_stop_before_playbook_begin = false
+arsenal_stop_after_playbook_end = false
+''', '''
+__include__ = { ref = "component_params.arsenal" }
+arsenal_stop_after_playbook_end = true
+''')
+        self.assertEqual(component.playbooks[0].params, {
+            "arsenal_config_path": "@comp/zemi/llm_curated_set_model_mode.toml",
+            "arsenal_stop_before_playbook_begin": False,
+            "arsenal_stop_after_playbook_end": True,
+        })
+        self.assertNotIn("__include__", component.playbooks[0].params)
+        self.assertNotIn(
+            "arsenal_stop_after_playbook_end",
+            component.playbooks[0].resolved_params,
+        )
+        self.assertEqual(
+            component.arsenal_config_path,
+            "@comp/zemi/llm_curated_set_model_mode.toml",
+        )
+        component.close()
+
+    def test_playbook_cannot_override_shared_arsenal_config_path(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "arsenal_config_path must match the shared",
+        ):
+            self.component('''
+[component_params.arsenal]
+arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"
+arsenal_stop_before_playbook_begin = false
+arsenal_stop_after_playbook_end = false
+''', '''
+__include__ = { ref = "component_params.arsenal" }
+arsenal_config_path = "@comp/zemi/llm_curated_set_router_mode.toml"
+''')
+
     def test_nested_include_and_bucket_in_bucket(self) -> None:
         component = self.component('''
 [param_buckets.base]

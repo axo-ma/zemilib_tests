@@ -1,3 +1,6 @@
+[arsenal]
+mode = "model"
+
 [[arsenal.llamas]]
 name = "primary"
 llama_build = "llama:b9222"

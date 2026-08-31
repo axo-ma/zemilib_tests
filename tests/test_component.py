@@ -307,10 +307,35 @@ class ComponentPathTests(ComponentFixture):
 
 
 class JobLifecycleTests(unittest.TestCase):
-    def test_successful_job_closes_component(self) -> None:
-        component = Mock()
+    def test_job_stops_shared_arsenal_at_outer_boundaries(self) -> None:
+        component = Mock(
+            arsenal_config_path="@comp/shared.toml",
+        )
+        session = Mock()
 
-        with patch("zemi.component.ZemiComponent", return_value=component):
+        with (
+            patch("zemi.component.ZemiComponent", return_value=component),
+            patch("zemi.arsenal.ArsenalSession", return_value=session) as session_type,
+            patch("zemi.arsenal.begin") as begin,
+            patch("zemi.arsenal.end") as end,
+        ):
+            runpy.run_path(str(JOB_PATH), run_name="__main__")
+
+        session_type.assert_called_once_with("@comp/shared.toml")
+        begin.assert_called_once_with(session, stop_before_begin=True)
+        component.run.assert_called_once_with()
+        end.assert_called_once_with(session, stop_after_end=True)
+        component.close.assert_called_once_with()
+
+    def test_successful_job_closes_component(self) -> None:
+        component = Mock(arsenal_config_path="@comp/shared.toml")
+
+        with (
+            patch("zemi.component.ZemiComponent", return_value=component),
+            patch("zemi.arsenal.ArsenalSession"),
+            patch("zemi.arsenal.begin"),
+            patch("zemi.arsenal.end"),
+        ):
             runpy.run_path(str(JOB_PATH), run_name="__main__")
 
         component.run.assert_called_once_with()
@@ -318,11 +343,14 @@ class JobLifecycleTests(unittest.TestCase):
 
     def test_failure_is_reported_closed_and_propagated(self) -> None:
         failure = RuntimeError("notebook failed")
-        component = Mock()
+        component = Mock(arsenal_config_path="@comp/shared.toml")
         component.run.side_effect = failure
 
         with (
             patch("zemi.component.ZemiComponent", return_value=component),
+            patch("zemi.arsenal.ArsenalSession"),
+            patch("zemi.arsenal.begin"),
+            patch("zemi.arsenal.end"),
             self.assertRaisesRegex(RuntimeError, "notebook failed"),
         ):
             runpy.run_path(str(JOB_PATH), run_name="__main__")
@@ -335,6 +363,12 @@ class JobLifecycleTests(unittest.TestCase):
         package = root / "zemi"
         package.mkdir(parents=True)
         (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "arsenal.py").write_text(
+            "class ArsenalSession:\n    def __init__(self, config):\n        pass\n"
+            "def begin(*args, **kwargs):\n    pass\n"
+            "def end(*args, **kwargs):\n    pass\n",
+            encoding="utf-8",
+        )
         (package / "component.py").write_text(
             """
 class Report:
@@ -343,12 +377,14 @@ class Report:
 
 class Playbook:
     enabled = True
+    params = {}
     def run(self):
         raise RuntimeError("subprocess failure")
 
 class ZemiComponent:
     def __init__(self, **kwargs):
         self.playbooks = [Playbook()]
+        self.arsenal_config_path = "@comp/shared.toml"
         self.report = Report()
     def run(self):
         try:
@@ -387,12 +423,98 @@ class ComponentConventionTests(unittest.TestCase):
         cells = [cell for cell in notebook["cells"] if cell.get("id") == "parameters"]
         self.assertEqual(len(cells), 1)
         self.assertEqual(cells[0]["metadata"].get("tags"), ["parameters"])
-        self.assertIn('model_name = "lfm2_350m"', "".join(cells[0]["source"]))
+        source = "".join(cells[0]["source"])
+        self.assertIn(
+            'arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"',
+            source,
+        )
+        self.assertIn("arsenal_stop_before_playbook_begin = True", source)
+        self.assertIn("arsenal_stop_after_playbook_end = True", source)
+        self.assertIn('model_name = "lfm2_350m"', source)
         tagged = [
             cell for cell in notebook["cells"]
             if "parameters" in cell.get("metadata", {}).get("tags", [])
         ]
         self.assertEqual(tagged, cells)
+
+    def test_arsenal_notebooks_parameterize_config_and_lifecycle(self) -> None:
+        for name in ("playbook.ipynb", "playbook_gbnf.ipynb", "playbook_guidance.ipynb"):
+            with self.subTest(notebook=name):
+                notebook = json.loads((PROJECT_ROOT / name).read_text(encoding="utf-8"))
+                parameters = [
+                    cell for cell in notebook["cells"]
+                    if cell.get("metadata", {}).get("tags") == ["parameters"]
+                ]
+                self.assertEqual(len(parameters), 1)
+                parameter_index = notebook["cells"].index(parameters[0])
+                heading = notebook["cells"][parameter_index - 1]
+                self.assertEqual(heading.get("id"), "input-parameters-heading")
+                self.assertEqual("".join(heading.get("source", [])), "## Input parameters")
+                preparation = notebook["cells"][parameter_index + 1]
+                self.assertEqual(
+                    preparation.get("id"),
+                    "playbook-preparation-heading",
+                )
+                self.assertEqual(
+                    "".join(preparation.get("source", [])),
+                    "## Playbook preparation",
+                )
+                defaults = "".join(parameters[0]["source"])
+                self.assertIn(
+                    'arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"',
+                    defaults,
+                )
+                self.assertIn("arsenal_stop_before_playbook_begin = True", defaults)
+                self.assertIn("arsenal_stop_after_playbook_end = True", defaults)
+                working_source = "\n".join(
+                    "".join(cell.get("source", []))
+                    for cell in notebook["cells"]
+                    if cell is not parameters[0] and cell.get("cell_type") == "code"
+                )
+                self.assertIn("ArsenalSession(arsenal_config_path)", working_source)
+                self.assertIn(
+                    "stop_before_begin=arsenal_stop_before_playbook_begin",
+                    working_source,
+                )
+                self.assertIn(
+                    "stop_after_end=arsenal_stop_after_playbook_end",
+                    working_source,
+                )
+
+    def test_all_arsenal_notebooks_keep_policy_out_of_working_cells(self) -> None:
+        arsenal_notebooks = []
+        for path in PROJECT_ROOT.rglob("*.ipynb"):
+            notebook = json.loads(path.read_text(encoding="utf-8"))
+            if "ArsenalSession" in json.dumps(notebook):
+                arsenal_notebooks.append((path, notebook))
+        self.assertTrue(arsenal_notebooks)
+        for path, notebook in arsenal_notebooks:
+            with self.subTest(notebook=path.relative_to(PROJECT_ROOT).as_posix()):
+                parameters = [
+                    cell for cell in notebook["cells"]
+                    if cell.get("metadata", {}).get("tags") == ["parameters"]
+                ]
+                self.assertEqual(len(parameters), 1)
+                defaults = "".join(parameters[0].get("source", []))
+                for name in (
+                    "arsenal_config_path",
+                    "arsenal_stop_before_playbook_begin",
+                    "arsenal_stop_after_playbook_end",
+                ):
+                    self.assertIn(name, defaults)
+                working_source = "\n".join(
+                    "".join(cell.get("source", []))
+                    for cell in notebook["cells"]
+                    if cell is not parameters[0] and cell.get("cell_type") == "code"
+                )
+                self.assertNotRegex(
+                    working_source,
+                    r"ArsenalSession\([\"']@(?:comp|inst)/",
+                )
+                self.assertNotRegex(
+                    working_source,
+                    r"stop_(?:before_begin|after_end)=(?:True|False)",
+                )
 
     def test_template_style_output_parameters_example_has_no_required_tag(self) -> None:
         notebook = json.loads((PROJECT_ROOT / "playbook.ipynb").read_text(encoding="utf-8"))
@@ -411,7 +533,17 @@ class ComponentConventionTests(unittest.TestCase):
         text = path.read_text(encoding="utf-8")
         with path.open("rb") as file:
             params = tomllib.load(file)
-        self.assertEqual(len(params["playbooks_params"]), 1)
+        self.assertEqual(params["component_params"]["arsenal"], {
+            "arsenal_config_path": "@comp/zemi/llm_curated_set_model_mode.toml",
+            "arsenal_stop_before_playbook_begin": False,
+            "arsenal_stop_after_playbook_end": False,
+        })
+        self.assertEqual(len(params["playbooks_params"]), 3)
+        self.assertTrue(all(
+            entry["playbook_params"]["__include__"]
+            == {"ref": "component_params.arsenal"}
+            for entry in params["playbooks_params"]
+        ))
         self.assertFalse(any(
             isinstance(value, dict) and "each" in value
             for value in params["playbooks_params"][0]["playbook_params"].values()
@@ -423,6 +555,17 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertIn('#     copied_options = { ref = "param_buckets.model.options" }', text)
         self.assertIn("#     stop_sequences =", text)
         self.assertIn("# [[playbooks_params]]", text)
+
+    def test_job_owns_outer_arsenal_stop_policy(self) -> None:
+        source = (PROJECT_ROOT / "job.exp.py").read_text(encoding="utf-8")
+        self.assertIn("arsenal.begin(arsenal_session, stop_before_begin=True)", source)
+        self.assertIn(
+            "arsenal.end(arsenal_session, stop_after_end=True)",
+            source,
+        )
+        self.assertNotIn("ExitStack", source)
+        self.assertNotIn("for playbook in component.playbooks", source)
+        self.assertLess(source.index("arsenal.begin("), source.index("component.run()"))
 
 
 if __name__ == "__main__":

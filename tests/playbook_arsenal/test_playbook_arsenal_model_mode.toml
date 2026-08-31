@@ -1,5 +1,8 @@
 # Configuration for two single-model llama servers in Model Mode.
 
+[arsenal]
+mode = "model"
+
 [[arsenal.llamas]]
     name = "primary"
     llama_build = "llama:b9222"
@@ -53,4 +56,3 @@
         [[arsenal.llamas.models.assistants]]
             name = "reporter"
             prefix = "@comp/tests/zemi_toml/prefixes/phi-report.md"
-

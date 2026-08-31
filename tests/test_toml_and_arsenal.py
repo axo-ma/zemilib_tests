@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from contextlib import redirect_stdout
+from inspect import signature
 from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -26,6 +27,7 @@ class TomlTests(unittest.TestCase):
 
         self.assertIs(type(config), dict)
         self.assertIs(type(config["arsenal"]), dict)
+        self.assertEqual(config["arsenal"]["mode"], "router")
         self.assertIs(type(config["arsenal"]["llamas"]), list)
         self.assertEqual(
             config["text_reference"],
@@ -73,6 +75,7 @@ class ArsenalObjectTreeTests(unittest.TestCase):
         assistant = qwen.assistants["assistant"]
 
         self.assertIsInstance(primary, Llama)
+        self.assertEqual(self.arsenal.mode, "router")
         self.assertIsInstance(qwen, Model)
         self.assertIsInstance(assistant, Assistant)
         self.assertIs(primary, self.arsenal.llamas[0])
@@ -98,6 +101,7 @@ class ArsenalObjectTreeTests(unittest.TestCase):
             default.config_path,
             "zemi/llm_curated_set_router_mode.toml",
         )
+        self.assertEqual(default.mode, "router")
         ling = default.llamas.curated_router.models.ling30_tiny
         self.assertEqual(ling.alias, "ling-3.0-tiny")
 
@@ -153,6 +157,24 @@ class ArsenalObjectTreeTests(unittest.TestCase):
     def test_arsenal_exposes_lifecycle(self) -> None:
         self.assertTrue(callable(arsenal.begin))
         self.assertTrue(callable(arsenal.end))
+        self.assertEqual(
+            list(signature(arsenal.begin).parameters),
+            ["config", "stop_before_begin"],
+        )
+
+    def test_mode_is_required_and_strictly_validated(self) -> None:
+        for invalid_mode in (None, "MODEL", "", 1, True, ["model"]):
+            with self.subTest(mode=invalid_mode):
+                config = json.loads(json.dumps(self.config))
+                if invalid_mode is None:
+                    config["arsenal"].pop("mode")
+                else:
+                    config["arsenal"]["mode"] = invalid_mode
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "arsenal.mode.*exactly 'model' or 'router'",
+                ):
+                    ArsenalSession(config)
 
     def test_arsenal_end_delegates_to_session(self) -> None:
         with patch.object(self.arsenal, "_end") as end_mock:
@@ -183,7 +205,6 @@ class ArsenalLazyActivationTests(unittest.TestCase):
                 result = arsenal.begin(
                     self.MODEL_MODE_PATH,
                     stop_before_begin=True,
-                    llama_router_mode=False,
                 )
 
         stop_mock.assert_called_once_with()
@@ -245,7 +266,6 @@ class ArsenalLazyActivationTests(unittest.TestCase):
             result = arsenal.begin(
                 self.MODEL_MODE_PATH,
                 stop_before_begin=False,
-                llama_router_mode=False,
             )
             first = result.llamas["primary"].models["qwen"]
             second = result.llamas.primary.models.qwen
@@ -295,7 +315,6 @@ class ArsenalLazyActivationTests(unittest.TestCase):
         ):
             result._begin(
                 stop_arsenal_before_begin=False,
-                llama_router_mode=True,
             )
             qwen = result.llamas.primary.models.qwen
             smollm = result.llamas.primary.models.smollm
@@ -307,6 +326,17 @@ class ArsenalLazyActivationTests(unittest.TestCase):
         start_mock.assert_called_once()
         self.assertEqual(load_mock.call_count, 2)
         stop_mock.assert_not_called()
+
+    def test_model_mode_rejects_multi_model_server_from_loaded_mode(self) -> None:
+        config = toml.load(CONFIG_PATH)
+        config["arsenal"]["mode"] = "model"
+        result = ArsenalSession(config)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Model Mode.*exactly one model.*primary \(2 models\)",
+        ):
+            arsenal.begin(result, stop_before_begin=False)
 
     def test_router_load_endpoint_uses_model_alias(self) -> None:
         result = ArsenalSession(self.ROUTER_MODE_PATH)
@@ -370,6 +400,8 @@ class LlmCuratedSetTests(unittest.TestCase):
         return [model for llama in session.llamas for model in llama.models]
 
     def test_files_parse_and_have_required_server_layout(self) -> None:
+        self.assertEqual(self.router.mode, "router")
+        self.assertEqual(self.model_mode.mode, "model")
         self.assertEqual(len(self.router.llamas), 1)
         self.assertEqual(len(self.router.llamas[0].models), 13)
         self.assertEqual(len(self.model_mode.llamas), 13)
