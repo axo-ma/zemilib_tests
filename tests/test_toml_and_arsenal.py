@@ -149,10 +149,9 @@ class ArsenalObjectTreeTests(unittest.TestCase):
         duplicate_config["arsenal"]["llamas"].append(
             json.loads(json.dumps(duplicate_config["arsenal"]["llamas"][0]))
         )
-        duplicate_config["arsenal"]["llamas"][1]["name"] = "secondary"
-        duplicate = ArsenalSession(duplicate_config)
-        with self.assertRaisesRegex(LookupError, "ambiguous across servers"):
-            duplicate.model("qwen")
+        duplicate_config["arsenal"]["llamas"][-1]["name"] = "tertiary"
+        with self.assertRaisesRegex(ValueError, "duplicate global Arsenal model"):
+            ArsenalSession(duplicate_config)
 
     def test_arsenal_exposes_lifecycle(self) -> None:
         self.assertTrue(callable(arsenal.begin))
