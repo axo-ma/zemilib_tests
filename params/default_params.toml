@@ -3,33 +3,30 @@
 [component_params]
 stop_on_error = true
 
-[component_params.arsenal]
+[[arsenals]]
+name = "local-models"
 arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"
-arsenal_stop_before_playbook_begin = false
-arsenal_stop_after_playbook_end = false
+arsenal_start_and_stop_at_job_level = true
 
-[[playbooks_params]]
+[[arsenals.playbooks_params]]
 playbook_name = "playbook.ipynb"
 enabled = true
 
-    [playbooks_params.playbook_params]
-    __include__ = { ref = "component_params.arsenal" }
+    [arsenals.playbooks_params.playbook_params]
     model_name = "lfm2_350m"
 
-[[playbooks_params]]
+[[arsenals.playbooks_params]]
 playbook_name = "playbook_gbnf.ipynb"
 enabled = false
 
-    [playbooks_params.playbook_params]
-    __include__ = { ref = "component_params.arsenal" }
+    [arsenals.playbooks_params.playbook_params]
     model_name = "ling30_tiny"
 
-[[playbooks_params]]
+[[arsenals.playbooks_params]]
 playbook_name = "playbook_guidance.ipynb"
 enabled = false
 
-    [playbooks_params.playbook_params]
-    __include__ = { ref = "component_params.arsenal" }
+    [arsenals.playbooks_params.playbook_params]
     model_name = "qwen35_4b"
 
 # Parameter bucket/ref example (fully commented out, so the default run is unchanged):

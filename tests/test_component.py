@@ -306,25 +306,114 @@ class ComponentPathTests(ComponentFixture):
         self.assertTrue(first.is_dir())
 
 
-class JobLifecycleTests(unittest.TestCase):
-    def test_job_stops_shared_arsenal_at_outer_boundaries(self) -> None:
-        component = Mock(
-            arsenal_config_path="@comp/shared.toml",
+class ArsenalGroupTests(ComponentFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        for name in ("one.ipynb", "two.ipynb", "three.ipynb"):
+            self.write_notebook(name)
+
+    def component(self, body: str, *, stop_on_error: bool = True) -> ZemiComponent:
+        self.write_default(
+            f"[component_params]\nstop_on_error = {str(stop_on_error).lower()}\n{body}"
         )
+        return ZemiComponent()
+
+    def test_managed_group_injects_params_and_wraps_all_playbooks_once(self) -> None:
+        component = self.component('''
+[[arsenals]]
+name = "managed"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/managed.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+[[arsenals.playbooks_params]]
+playbook_name = "two.ipynb"
+''')
+        self.assertEqual(
+            [playbook.params for playbook in component.playbooks],
+            [
+                {"arsenal_config_path": "@comp/managed.toml", "arsenal_start_and_stop_at_job_level": True},
+                {"arsenal_config_path": "@comp/managed.toml", "arsenal_start_and_stop_at_job_level": True},
+            ],
+        )
+        events = []
+        for playbook in component.playbooks:
+            playbook.run = lambda p=playbook: events.append(p.playbook_name)
         session = Mock()
+        with patch("zemi.arsenal.ArsenalSession", return_value=session), patch("zemi.arsenal.begin", side_effect=lambda *_a, **_k: events.append("begin")), patch("zemi.arsenal.end", side_effect=lambda *_a, **_k: events.append("end")):
+            component.run()
+        self.assertEqual(events, ["begin", "one.ipynb", "two.ipynb", "end"])
+        component.close()
 
-        with (
-            patch("zemi.component.ZemiComponent", return_value=component),
-            patch("zemi.arsenal.ArsenalSession", return_value=session) as session_type,
-            patch("zemi.arsenal.begin") as begin,
-            patch("zemi.arsenal.end") as end,
-        ):
+    def test_unmanaged_group_inherits_default_and_allows_notebook_override(self) -> None:
+        component = self.component('''
+[[arsenals]]
+name = "notebook-owned"
+arsenal_start_and_stop_at_job_level = false
+arsenal_config_path = "@comp/default.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+[[arsenals.playbooks_params]]
+playbook_name = "two.ipynb"
+[arsenals.playbooks_params.playbook_params]
+arsenal_config_path = "@comp/override.toml"
+''')
+        self.assertEqual([p.params["arsenal_config_path"] for p in component.playbooks], ["@comp/default.toml", "@comp/override.toml"])
+        self.assertTrue(all(p.params["arsenal_start_and_stop_at_job_level"] is False for p in component.playbooks))
+        with patch("zemi.arsenal.ArsenalSession") as session_type:
+            component.run = component.run
+            for playbook in component.playbooks:
+                playbook.run = Mock()
+            component.run()
+        session_type.assert_not_called()
+        component.close()
+
+    def test_groups_switch_in_toml_order(self) -> None:
+        component = self.component('''
+[[arsenals]]
+name = "first"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/first.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+[[arsenals]]
+name = "second"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/second.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "two.ipynb"
+''')
+        events = []
+        for playbook in component.playbooks:
+            playbook.run = lambda p=playbook: events.append(p.playbook_name)
+        with patch("zemi.arsenal.ArsenalSession", side_effect=lambda path: path), patch("zemi.arsenal.begin", side_effect=lambda session, **_k: events.append(f"begin:{session}")), patch("zemi.arsenal.end", side_effect=lambda session, **_k: events.append(f"end:{session}")):
+            component.run()
+        self.assertEqual(events, ["begin:@comp/first.toml", "one.ipynb", "end:@comp/first.toml", "begin:@comp/second.toml", "two.ipynb", "end:@comp/second.toml"])
+        component.close()
+
+    def test_playbook_error_still_ends_group_and_component_can_close(self) -> None:
+        component = self.component('''
+[[arsenals]]
+name = "managed"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/managed.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+''')
+        component.playbooks[0].run = Mock(side_effect=RuntimeError("failed"))
+        with patch("zemi.arsenal.ArsenalSession", return_value=Mock()), patch("zemi.arsenal.begin"), patch("zemi.arsenal.end") as end, self.assertRaisesRegex(RuntimeError, "failed"):
+            component.run()
+        end.assert_called_once()
+        component.close()
+        self.assertTrue((component.run_directory / "complete").is_file())
+
+
+class JobLifecycleTests(unittest.TestCase):
+    def test_job_delegates_all_orchestration_to_component(self) -> None:
+        component = Mock()
+        with patch("zemi.component.ZemiComponent", return_value=component):
             runpy.run_path(str(JOB_PATH), run_name="__main__")
-
-        session_type.assert_called_once_with("@comp/shared.toml")
-        begin.assert_called_once_with(session, stop_before_begin=True)
         component.run.assert_called_once_with()
-        end.assert_called_once_with(session, stop_after_end=True)
         component.close.assert_called_once_with()
 
     def test_successful_job_closes_component(self) -> None:
@@ -428,8 +517,7 @@ class ComponentConventionTests(unittest.TestCase):
             'arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"',
             source,
         )
-        self.assertIn("arsenal_stop_before_playbook_begin = True", source)
-        self.assertIn("arsenal_stop_after_playbook_end = True", source)
+        self.assertIn("arsenal_start_and_stop_at_job_level = False", source)
         self.assertIn('model_name = "lfm2_350m"', source)
         tagged = [
             cell for cell in notebook["cells"]
@@ -464,8 +552,7 @@ class ComponentConventionTests(unittest.TestCase):
                     'arsenal_config_path = "@comp/zemi/llm_curated_set_model_mode.toml"',
                     defaults,
                 )
-                self.assertIn("arsenal_stop_before_playbook_begin = True", defaults)
-                self.assertIn("arsenal_stop_after_playbook_end = True", defaults)
+                self.assertIn("arsenal_start_and_stop_at_job_level = False", defaults)
                 working_source = "\n".join(
                     "".join(cell.get("source", []))
                     for cell in notebook["cells"]
@@ -473,17 +560,17 @@ class ComponentConventionTests(unittest.TestCase):
                 )
                 self.assertIn("ArsenalSession(arsenal_config_path)", working_source)
                 self.assertIn(
-                    "stop_before_begin=arsenal_stop_before_playbook_begin",
+                    "stop_before_begin=not arsenal_start_and_stop_at_job_level",
                     working_source,
                 )
                 self.assertIn(
-                    "stop_after_end=arsenal_stop_after_playbook_end",
+                    "stop_after_end=not arsenal_start_and_stop_at_job_level",
                     working_source,
                 )
 
     def test_all_arsenal_notebooks_keep_policy_out_of_working_cells(self) -> None:
         arsenal_notebooks = []
-        for path in PROJECT_ROOT.rglob("*.ipynb"):
+        for path in (PROJECT_ROOT / name for name in ("playbook.ipynb", "playbook_gbnf.ipynb", "playbook_guidance.ipynb")):
             notebook = json.loads(path.read_text(encoding="utf-8"))
             if "ArsenalSession" in json.dumps(notebook):
                 arsenal_notebooks.append((path, notebook))
@@ -498,8 +585,7 @@ class ComponentConventionTests(unittest.TestCase):
                 defaults = "".join(parameters[0].get("source", []))
                 for name in (
                     "arsenal_config_path",
-                    "arsenal_stop_before_playbook_begin",
-                    "arsenal_stop_after_playbook_end",
+                    "arsenal_start_and_stop_at_job_level",
                 ):
                     self.assertIn(name, defaults)
                 working_source = "\n".join(
@@ -533,20 +619,15 @@ class ComponentConventionTests(unittest.TestCase):
         text = path.read_text(encoding="utf-8")
         with path.open("rb") as file:
             params = tomllib.load(file)
-        self.assertEqual(params["component_params"]["arsenal"], {
-            "arsenal_config_path": "@comp/zemi/llm_curated_set_model_mode.toml",
-            "arsenal_stop_before_playbook_begin": False,
-            "arsenal_stop_after_playbook_end": False,
-        })
-        self.assertEqual(len(params["playbooks_params"]), 3)
-        self.assertTrue(all(
-            entry["playbook_params"]["__include__"]
-            == {"ref": "component_params.arsenal"}
-            for entry in params["playbooks_params"]
-        ))
+        self.assertEqual(len(params["arsenals"]), 1)
+        arsenal = params["arsenals"][0]
+        self.assertEqual(arsenal["name"], "local-models")
+        self.assertTrue(arsenal["arsenal_start_and_stop_at_job_level"])
+        self.assertEqual(arsenal["arsenal_config_path"], "@comp/zemi/llm_curated_set_model_mode.toml")
+        self.assertEqual(len(arsenal["playbooks_params"]), 3)
         self.assertFalse(any(
             isinstance(value, dict) and "each" in value
-            for value in params["playbooks_params"][0]["playbook_params"].values()
+            for value in arsenal["playbooks_params"][0]["playbook_params"].values()
         ))
         self.assertIn("#     temperature = { each =", text)
         self.assertIn("#     seed = { each =", text)
@@ -556,16 +637,14 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertIn("#     stop_sequences =", text)
         self.assertIn("# [[playbooks_params]]", text)
 
-    def test_job_owns_outer_arsenal_stop_policy(self) -> None:
+    def test_job_is_declarative_and_component_owns_lifecycle(self) -> None:
         source = (PROJECT_ROOT / "job.exp.py").read_text(encoding="utf-8")
-        self.assertIn("arsenal.begin(arsenal_session, stop_before_begin=True)", source)
-        self.assertIn(
-            "arsenal.end(arsenal_session, stop_after_end=True)",
-            source,
-        )
-        self.assertNotIn("ExitStack", source)
-        self.assertNotIn("for playbook in component.playbooks", source)
-        self.assertLess(source.index("arsenal.begin("), source.index("component.run()"))
+        self.assertIn("component = ZemiComponent()", source)
+        self.assertIn("component.run()", source)
+        self.assertIn("component.close()", source)
+        self.assertNotIn("ArsenalSession", source)
+        self.assertNotIn("arsenal.begin", source)
+        self.assertNotIn("arsenal.end", source)
 
 
 if __name__ == "__main__":

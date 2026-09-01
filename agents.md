@@ -2,6 +2,13 @@
 
 Do not assume paths, dependencies, branch policies, or deployment behavior unless they are explicitly specified. If a required value is unknown, first find it in the available context or ask for clarification.
 
+Keep solutions simple and strictly within the requested task. Do not over-engineer
+the architecture or expand the scope. If the task is ambiguous, requires
+substantial complication, or needs a new design decision, stop and ask the user.
+
+When changing code, always report completion progress as a percentage in user
+updates.
+
 ## Paths in TOML
 
 Do not use absolute paths. Specify paths in only one of these two forms:
