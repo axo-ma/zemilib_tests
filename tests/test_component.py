@@ -391,6 +391,46 @@ playbook_name = "two.ipynb"
         self.assertEqual(events, ["begin:@comp/first.toml", "one.ipynb", "end:@comp/first.toml", "begin:@comp/second.toml", "two.ipynb", "end:@comp/second.toml"])
         component.close()
 
+    def test_enabled_select_false_skips_playbook_and_managed_group(self) -> None:
+        with patch("builtins.input", return_value="1") as input_mock:
+            component = self.component('''
+[[arsenals]]
+name = "optional"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/optional.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+enabled = { select = [false, true] }
+''')
+        input_mock.assert_called_once()
+        self.assertFalse(component.playbooks[0].enabled)
+        component.playbooks[0].run = Mock()
+        with patch("zemi.arsenal.ArsenalSession") as session_type:
+            component.run()
+        session_type.assert_not_called()
+        component.playbooks[0].run.assert_not_called()
+        component.close()
+
+    def test_enabled_select_true_runs_playbook_with_group_cleanup(self) -> None:
+        with patch("builtins.input", return_value="2"):
+            component = self.component('''
+[[arsenals]]
+name = "optional"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/optional.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+enabled = { select = [false, true] }
+''')
+        self.assertTrue(component.playbooks[0].enabled)
+        component.playbooks[0].run = Mock()
+        with patch("zemi.arsenal.ArsenalSession", return_value=Mock()), patch("zemi.arsenal.begin") as begin, patch("zemi.arsenal.end") as end:
+            component.run()
+        begin.assert_called_once()
+        component.playbooks[0].run.assert_called_once_with()
+        end.assert_called_once()
+        component.close()
+
     def test_playbook_error_still_ends_group_and_component_can_close(self) -> None:
         component = self.component('''
 [[arsenals]]
