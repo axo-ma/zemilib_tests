@@ -153,6 +153,42 @@ mode = { select = ["fast", "safe"] }
                     ZemiComponent()
 
 
+class SharedPipelineParameterTests(ComponentFixture):
+    def test_pipeline_select_is_prompted_once_and_shared_by_playbooks(self) -> None:
+        self.write_notebook("one.ipynb")
+        self.write_notebook("two.ipynb")
+        self.write_default('''
+[pipeline_params]
+dataset = { select = [{ ref = "param_buckets.first" }, { ref = "param_buckets.second" }] }
+
+[param_buckets.first]
+workbook_name = "one.xlsx"
+expected_range = "A1:B2"
+[param_buckets.second]
+workbook_name = "two.xlsx"
+expected_range = "C3:D4"
+
+[component_params]
+stop_on_error = true
+
+[[playbooks_params]]
+playbook_name = "one.ipynb"
+[playbooks_params.playbook_params]
+dataset = { ref = "pipeline_params.dataset" }
+
+[[playbooks_params]]
+playbook_name = "two.ipynb"
+[playbooks_params.playbook_params]
+dataset = { ref = "pipeline_params.dataset" }
+''')
+        with patch("builtins.input", return_value="2") as prompt:
+            component = ZemiComponent()
+        expected = {"workbook_name": "two.xlsx", "expected_range": "C3:D4"}
+        self.assertEqual(prompt.call_count, 1)
+        self.assertEqual(component.pipeline_params["dataset"], expected)
+        self.assertEqual([p.params["dataset"] for p in component.playbooks], [expected, expected])
+        component.close()
+
 class ParameterReferenceTests(ComponentFixture):
     def setUp(self) -> None:
         super().setUp()
