@@ -152,6 +152,40 @@ mode = { select = ["fast", "safe"] }
                 with patch("builtins.input", **kwargs), self.assertRaisesRegex((ValueError, RuntimeError), message):
                     ZemiComponent()
 
+    def test_direct_typed_input_and_default_are_resolved(self) -> None:
+        self.write_default(_config("""
+[[playbooks_params]]
+playbook_name = "same.ipynb"
+[playbooks_params.playbook_params]
+count = { input = { prompt = "Count", type = "integer" } }
+enabled_flag = { input = { prompt = "Enabled", type = "boolean", default = true } }
+"""))
+        with patch("builtins.input", side_effect=["7", ""]):
+            component = ZemiComponent()
+        self.assertEqual(component.playbooks[0].params["count"], 7)
+        self.assertIs(component.playbooks[0].params["enabled_flag"], True)
+        self.assertEqual(component.playbooks[0].resolved_params["count"]["source"], "input")
+        component.close()
+
+    def test_selected_array_can_contain_path_input(self) -> None:
+        self.write_default(_config("""
+[pipeline_params.dataset]
+select = [
+    ["@comp/data/one.xlsx", "A1:B2"],
+    [{ input = { prompt = "Excel path", type = "path" } }, ""],
+]
+[[playbooks_params]]
+playbook_name = "same.ipynb"
+[playbooks_params.playbook_params]
+dataset = { ref = "pipeline_params.dataset" }
+"""))
+        with patch("builtins.input", side_effect=["2", "D:/data/custom.xlsx"]) as prompt:
+            component = ZemiComponent()
+        self.assertEqual(prompt.call_count, 2)
+        self.assertEqual(component.pipeline_params["dataset"], ["D:/data/custom.xlsx", ""])
+        self.assertEqual(component.playbooks[0].params["dataset"], ["D:/data/custom.xlsx", ""])
+        component.close()
+
 
 class SharedPipelineParameterTests(ComponentFixture):
     def test_pipeline_select_is_prompted_once_and_shared_by_playbooks(self) -> None:
@@ -583,9 +617,14 @@ playbook_name = "two.ipynb"
             html,
         )
         self.assertIn(
-            "if(k==='trial_id'&&(t.output_notebook||t.output_path))",
+            "if(k==='trial_id'&&(t.output_html||t.output_notebook||t.output_path))",
             html,
         )
+        self.assertIn("notebooks/p001-t0001-one.html", html)
+        for playbook in component.playbooks:
+            self.assertTrue(playbook.output_path.is_file())
+            self.assertTrue(playbook.output_html_path.is_file())
+            self.assertIn("<html", playbook.output_html_path.read_text(encoding="utf-8").lower())
         self.assertNotIn("if(k==='output_notebook'", html)
         self.assertIn(
             "serviceParams=new Set(['arsenal_config_path',"

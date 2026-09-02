@@ -1,5 +1,10 @@
 # General Instructions
 
+At the start of every task, run a minimal read-only workspace diagnostic for the
+known Windows ACL helper issue. If it fails with the "apply deny-read ACLs"
+message, do not retry equivalent sandboxed operations; immediately follow
+codex_bugs.md.
+
 Do not assume paths, dependencies, branch policies, or deployment behavior unless they are explicitly specified. If a required value is unknown, first find it in the available context or ask for clarification.
 
 Keep solutions simple and strictly within the requested task. Do not over-engineer
