@@ -650,7 +650,8 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertIn("Output parameters", "".join(headings[0]["source"]))
         self.assertEqual(len(outputs), 1)
         source = "".join(outputs[0]["source"])
-        self.assertIn("from zemi.playbook import output_params", source)
+        self.assertIn("from zemi.playbook import output_params, output_path", source)
+        self.assertIn('output_path("reports/results.xlsx")', source)
         self.assertIn("output_params({", source)
         self.assertNotIn("tags", outputs[0]["metadata"])
 

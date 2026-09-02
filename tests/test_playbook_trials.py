@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -10,7 +11,14 @@ from unittest.mock import Mock, patch
 
 from zemi.component import ZemiComponent, _summarize_trials
 from zemi import env
-from zemi.playbook import PLAYBOOK_OUTPUT_MIME, output_params, validate_output_params
+from zemi.playbook import (
+    PLAYBOOK_OUTPUT_MIME,
+    _output_context,
+    output_dir,
+    output_params,
+    output_path,
+    validate_output_params,
+)
 
 from tests.test_component import ComponentFixture
 
@@ -306,6 +314,95 @@ seed = { each = [{ ref = "param_buckets.seeds" }, 3] }
         component.close()
 
 
+class OutputPathTests(ComponentFixture):
+    def test_output_dir_is_absolute_and_exists_in_active_context(self) -> None:
+        run_directory = self.root / ".tmp" / "run-one"
+        with _output_context(run_directory):
+            result = output_dir()
+        self.assertEqual(result, run_directory.resolve())
+        self.assertTrue(result.is_absolute())
+        self.assertTrue(result.is_dir())
+
+    def test_output_path_creates_nested_parents_and_accepts_pathlike(self) -> None:
+        run_directory = self.root / ".tmp" / "run-two"
+        with _output_context(run_directory):
+            result = output_path(Path("reports") / "tables" / "results.xlsx")
+        self.assertEqual(
+            result,
+            (run_directory / "reports" / "tables" / "results.xlsx").resolve(),
+        )
+        self.assertTrue(result.parent.is_dir())
+        self.assertFalse(result.exists())
+
+    def test_returned_output_path_can_be_written_as_an_ordinary_file(self) -> None:
+        with _output_context(self.root / ".tmp" / "run-three"):
+            result = output_path("reports/result.txt")
+            result.write_text("ready", encoding="utf-8")
+        self.assertEqual(result.read_text(encoding="utf-8"), "ready")
+
+    def test_output_path_rejects_absolute_and_traversal_paths(self) -> None:
+        run_directory = self.root / ".tmp" / "run-four"
+        with _output_context(run_directory):
+            with self.assertRaisesRegex(ValueError, "relative path"):
+                output_path(self.root / "outside.txt")
+            for value in ("../outside.txt", "reports/../../outside.txt"):
+                with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, "must not contain"
+                ):
+                    output_path(value)
+        self.assertFalse((self.root / "outside.txt").exists())
+
+    def test_output_helpers_fail_outside_an_active_run(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "active ZEMI playbook run"):
+                output_dir()
+            with self.assertRaisesRegex(RuntimeError, "active ZEMI playbook run"):
+                output_path("result.txt")
+
+    def test_sequential_run_contexts_do_not_mix_directories(self) -> None:
+        first = self.root / ".tmp" / "run-five"
+        second = self.root / ".tmp" / "run-six"
+        with patch.dict(os.environ, {}, clear=True):
+            with _output_context(first):
+                first_path = output_path("result.txt")
+            with _output_context(second):
+                second_path = output_path("result.txt")
+            with self.assertRaisesRegex(RuntimeError, "active ZEMI playbook run"):
+                output_dir()
+        self.assertEqual(first_path, (first / "result.txt").resolve())
+        self.assertEqual(second_path, (second / "result.txt").resolve())
+        self.assertNotEqual(first_path.parent, second_path.parent)
+
+    def test_runner_activates_its_canonical_run_directory(self) -> None:
+        self.write_notebook("one.ipynb")
+        self.write_default(_config('''
+[[playbooks_params]]
+playbook_name = "one.ipynb"
+'''))
+        component = ZemiComponent()
+        observed = []
+
+        def execute(_source, notebook_output, **_kwargs):
+            observed.append(output_dir())
+            Path(notebook_output).write_text(
+                json.dumps(
+                    {
+                        "cells": [],
+                        "metadata": {},
+                        "nbformat": 4,
+                        "nbformat_minor": 5,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        papermill = Mock()
+        papermill.execute_notebook.side_effect = execute
+        with patch.dict(sys.modules, {"papermill": papermill}):
+            component.playbooks[0].run()
+        component.close()
+        self.assertEqual(observed, [component.run_directory.resolve()])
+
 class StructuredOutputTests(ComponentFixture):
     def setUp(self) -> None:
         super().setUp()
@@ -444,6 +541,27 @@ playbook_name = "two.ipynb"
         self.assertNotIn("http://", html)
         self.assertNotIn(dangerous, html)
         self.assertIn("notebooks/p001-t0001-one.ipynb", html)
+        self.assertIn(
+            "cols=['trial_id',...ins.map(k=>'in:'+k),"
+            "...outs.map(k=>'out:'+k),'status','duration_seconds']",
+            html,
+        )
+        self.assertIn(
+            "if(k==='trial_id'&&(t.output_notebook||t.output_path))",
+            html,
+        )
+        self.assertNotIn("if(k==='output_notebook'", html)
+        self.assertIn(
+            "serviceParams=new Set(['arsenal_config_path',"
+            "'arsenal_start_and_stop_at_job_level'])",
+            html,
+        )
+        self.assertIn("!serviceParams.has(k)", html)
+        self.assertIn("max-width:16rem", html)
+        self.assertIn("text-overflow:ellipsis", html)
+        self.assertIn(".col-trial_id a", html)
+        self.assertIn("overflow-wrap:anywhere", html)
+        self.assertIn("span.title=display", html)
         self.assertIn('id="search"', html)
         self.assertIn('id="playbook-filter"', html)
         self.assertIn('id="status-filter"', html)
