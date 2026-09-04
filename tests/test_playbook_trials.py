@@ -577,7 +577,7 @@ playbook_name = "two.ipynb"
                 self.assertEqual(len(calls), expected_calls)
                 self.assertEqual(component.report.data["status"], "failed")
 
-    def test_atomic_report_is_updated_between_trials_and_html_is_offline(self) -> None:
+    def test_atomic_report_is_updated_and_markdown_reports_are_linked(self) -> None:
         component = self._two_playbooks(False)
         papermill = Mock(); call_count = 0
         dangerous = '</script><img src=x onerror="alert(1)">'
@@ -601,29 +601,23 @@ playbook_name = "two.ipynb"
         report = json.loads(component.report.path.read_text(encoding="utf-8"))
         self.assertEqual([t["status"] for t in report["trials"]], ["succeeded", "succeeded"])
         self.assertEqual(report["trials"][0]["output_params"]["nested"]["value"], dangerous)
-        html = component.report.html_path.read_text(encoding="utf-8")
+
+        main = component.report.main_path.read_text(encoding="utf-8")
         for section in ("Overview", "Runs", "Summary", "Run details", "Errors"):
-            self.assertIn(f">{section}<", html)
-        positions = [html.index(f">{section}<") for section in ("Overview", "Runs", "Summary", "Run details", "Errors")]
+            self.assertIn(f"## {section}", main)
+        positions = [main.index(f"## {section}") for section in ("Overview", "Runs", "Summary", "Run details", "Errors")]
         self.assertEqual(positions, sorted(positions))
-        self.assertNotIn(">Outputs<", html)
-        self.assertNotIn("https://", html)
-        self.assertNotIn("http://", html)
-        self.assertNotIn(dangerous, html)
-        self.assertIn("notebooks/p001-t0001-one.ipynb", html)
-        self.assertIn(
-            "cols=['trial_id',...ins.map(k=>'in:'+k),"
-            "'output_report','status','duration_seconds']",
-            html,
-        )
-        self.assertIn(
-            "if(k==='trial_id'&&(t.output_html||t.output_notebook||t.output_path))",
-            html,
-        )
-        self.assertIn("k==='output_report'&&v", html)
-        self.assertIn('href="report.md"', html)
-        self.assertIn("notebooks/p001-t0001-one.html", html)
+        self.assertIn("[Open consolidated outputs](report.md)", main)
+        self.assertIn("notebooks/p001-t0001-one.report.md", main)
+        self.assertIn("notebooks/p001-t0001-one.html", main)
+        self.assertIn("<details>", main)
+        self.assertNotIn("<script", main)
+        self.assertNotIn("id=\"search\"", main)
+        self.assertNotIn(dangerous, main)
+        self.assertFalse((component.run_directory / "report.html").exists())
+
         summary_markdown = component.report.markdown_path.read_text(encoding="utf-8")
+        self.assertIn("[Open main job report](main.md)", summary_markdown)
         self.assertIn("<details>", summary_markdown)
         self.assertIn("<summary>p001-t0001-one", summary_markdown)
         self.assertIn("notebooks/p001-t0001-one.report.md", summary_markdown)
@@ -638,26 +632,9 @@ playbook_name = "two.ipynb"
             self.assertIn("<table>", output_markdown)
             self.assertIn("<details>", output_markdown)
             self.assertIn("<th>Result</th><th>Value</th>", output_markdown)
-        self.assertNotIn("if(k==='output_notebook'", html)
-        self.assertIn(
-            "serviceParams=new Set(['arsenal_config_path',"
-            "'arsenal_start_and_stop_at_job_level'])",
-            html,
-        )
-        self.assertIn("!serviceParams.has(k)", html)
-        self.assertIn("max-width:16rem", html)
-        self.assertIn("text-overflow:ellipsis", html)
-        self.assertIn(".col-trial_id a", html)
-        self.assertIn("overflow-wrap:anywhere", html)
-        self.assertIn("span.title=display", html)
-        self.assertIn('id="search"', html)
-        self.assertIn('id="playbook-filter"', html)
-        self.assertIn('id="status-filter"', html)
-        self.assertIn('id="parameter-filter"', html)
-        self.assertIn('id="parameter-value"', html)
         self.assertFalse((component.run_directory / ".report.json.tmp").exists())
         self.assertFalse((component.run_directory / ".report.md.tmp").exists())
-
+        self.assertFalse((component.run_directory / ".main.md.tmp").exists())
     def test_summary_contains_only_counts_and_trial_ids(self) -> None:
         trials = [
             {"trial_id": "t1", "status": "succeeded", "input_params": {"seed": 1}, "output_params": {"score": 1}},
