@@ -306,6 +306,35 @@ class ComponentPathTests(ComponentFixture):
         self.assertTrue(first.is_dir())
 
 
+    def test_runid_reuses_runner_directory_inside_component(self) -> None:
+        runner_directory = self.root / ".tmp" / "run-runner-owned"
+        runner_directory.mkdir(parents=True)
+        independent = self.root / ".tmp" / "run-independent"
+        env.path.comp._runid = independent
+
+        with patch.dict(
+            os.environ,
+            {"ZEMI_PLAYBOOK_OUTPUT_DIR": str(runner_directory)},
+            clear=False,
+        ):
+            inherited = env.path.comp.runid
+
+        self.assertEqual(inherited, runner_directory.resolve())
+        self.assertEqual(env.path.comp._runid, runner_directory.resolve())
+        self.assertFalse(independent.exists())
+
+    def test_runid_rejects_runner_directory_outside_current_component(self) -> None:
+        outside = env.path.tmp / "run-not-this-component"
+        with (
+            patch.dict(
+                os.environ,
+                {"ZEMI_PLAYBOOK_OUTPUT_DIR": str(outside)},
+                clear=False,
+            ),
+            self.assertRaisesRegex(RuntimeError, "directly inside"),
+        ):
+            _ = env.path.comp.runid
+
 class ArsenalGroupTests(ComponentFixture):
     def setUp(self) -> None:
         super().setUp()

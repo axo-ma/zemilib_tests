@@ -613,18 +613,31 @@ playbook_name = "two.ipynb"
         self.assertIn("notebooks/p001-t0001-one.ipynb", html)
         self.assertIn(
             "cols=['trial_id',...ins.map(k=>'in:'+k),"
-            "...outs.map(k=>'out:'+k),'status','duration_seconds']",
+            "'output_report','status','duration_seconds']",
             html,
         )
         self.assertIn(
             "if(k==='trial_id'&&(t.output_html||t.output_notebook||t.output_path))",
             html,
         )
+        self.assertIn("k==='output_report'&&v", html)
+        self.assertIn('href="report.md"', html)
         self.assertIn("notebooks/p001-t0001-one.html", html)
+        summary_markdown = component.report.markdown_path.read_text(encoding="utf-8")
+        self.assertIn("<details>", summary_markdown)
+        self.assertIn("<summary>p001-t0001-one", summary_markdown)
+        self.assertIn("notebooks/p001-t0001-one.report.md", summary_markdown)
+        self.assertNotIn(dangerous, summary_markdown)
+        self.assertIn("&lt;/script&gt;", summary_markdown)
         for playbook in component.playbooks:
             self.assertTrue(playbook.output_path.is_file())
             self.assertTrue(playbook.output_html_path.is_file())
+            self.assertTrue(playbook.output_markdown_path.is_file())
             self.assertIn("<html", playbook.output_html_path.read_text(encoding="utf-8").lower())
+            output_markdown = playbook.output_markdown_path.read_text(encoding="utf-8")
+            self.assertIn("<table>", output_markdown)
+            self.assertIn("<details>", output_markdown)
+            self.assertIn("<th>Result</th><th>Value</th>", output_markdown)
         self.assertNotIn("if(k==='output_notebook'", html)
         self.assertIn(
             "serviceParams=new Set(['arsenal_config_path',"
@@ -643,6 +656,7 @@ playbook_name = "two.ipynb"
         self.assertIn('id="parameter-filter"', html)
         self.assertIn('id="parameter-value"', html)
         self.assertFalse((component.run_directory / ".report.json.tmp").exists())
+        self.assertFalse((component.run_directory / ".report.md.tmp").exists())
 
     def test_summary_contains_only_counts_and_trial_ids(self) -> None:
         trials = [
