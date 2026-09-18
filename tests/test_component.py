@@ -691,21 +691,19 @@ class ComponentConventionTests(unittest.TestCase):
             params = tomllib.load(file)
         self.assertEqual(len(params["arsenals"]), 1)
         arsenal = params["arsenals"][0]
-        self.assertEqual(arsenal["name"], "local-models")
-        self.assertTrue(arsenal["arsenal_start_and_stop_at_job_level"])
-        self.assertEqual(arsenal["arsenal_config_path"], "@comp/zemi/llm_curated_set_model_mode.toml")
-        self.assertEqual(len(arsenal["playbooks_params"]), 3)
+        self.assertEqual(params["system"]["version"], "0.3")
+        self.assertEqual(arsenal["id"], "local-models")
+        self.assertEqual(arsenal["lifecycle"], "job")
+        self.assertEqual(arsenal["config_path"], "@comp/zemi/llm_curated_set_model_mode.toml")
+        self.assertEqual(len(params["playbooks"]), 3)
         self.assertFalse(any(
-            isinstance(value, dict) and "each" in value
-            for value in arsenal["playbooks_params"][0]["playbook_params"].values()
+            isinstance(value, dict) and ("values" in value or "range" in value)
+            for value in params["playbooks"][0]["params"].values()
         ))
-        self.assertIn("#     temperature = { each =", text)
-        self.assertIn("#     seed = { each =", text)
-        self.assertIn("#     backend = { select =", text)
-        self.assertIn('#     __include__ = { ref = "param_buckets.combined" }', text)
-        self.assertIn('#     copied_options = { ref = "param_buckets.model.options" }', text)
-        self.assertIn("#     stop_sequences =", text)
-        self.assertIn("# [[playbooks_params]]", text)
+        self.assertIn("# temperature = { values =", text)
+        self.assertIn("# seed = { range =", text)
+        self.assertIn('# __include__ = { ref = "component.params.model" }', text)
+        self.assertIn("# [playbooks.sampler]", text)
 
     def test_job_is_declarative_and_component_owns_lifecycle(self) -> None:
         source = (PROJECT_ROOT / "job.exp.py").read_text(encoding="utf-8")

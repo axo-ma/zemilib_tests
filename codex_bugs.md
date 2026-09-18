@@ -38,3 +38,18 @@ A failed call does not modify project files.
 
 This workaround is specific to the ACL-helper failure. Prefer normal sandboxed
 commands and built-in apply_patch whenever they work.
+
+### Confirmed repair on 2026-09-09
+
+The sandbox log identified a JSON parse failure in
+`C:\Users\Axoman\.codex\.sandbox\deny_read_acl_state.json`.
+The file contained exactly 22 NUL bytes, not valid JSON.
+
+After verifying the bytes, the corrupt file was renamed to
+`deny_read_acl_state.json.corrupt-20260909.bak` in the same directory,
+using an approved elevated command. The next ordinary sandboxed shell
+command succeeded. The sandbox configuration remained `elevated`.
+
+If this error recurs, inspect the dated sandbox log and state file first.
+Only use this repair when corruption is confirmed; preserve the original
+file as a backup. Do not reset filesystem ACLs or disable the sandbox.

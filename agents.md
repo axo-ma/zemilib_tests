@@ -78,6 +78,9 @@ checks, and dependency management through that interpreter.
 - Do not add `zemi` library tests to `zemi_component_template`. That repository
   is a consumer-facing component template, not the library development or test
   location.
+- Before changing the parameter mechanism, trials, samplers, evaluators, or
+  related configuration, read `docs/ZEMI_PARAMS_0.3.md` and preserve its
+  structural-section, resolution, and lifecycle contracts.
 
 ## Standard markers
 
