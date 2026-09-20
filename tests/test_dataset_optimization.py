@@ -213,6 +213,39 @@ direction = "maximize"
             self.assertTrue((component.run_directory / run['artifacts']['output_notebook']).is_file())
             self.assertEqual(run['prediction'], {'ranges': []})
 
+    def test_component_can_replay_best_sample_from_report(self):
+        component = self.component()
+        report_path = self.root / 'validation-report.json'
+        report_path.write_text(json.dumps({'job_trial': {'playbook_trials': [{
+            'playbook_id': 'detect', 'status': 'succeeded', 'best_sample': 'detect-sample-0002',
+            'samples': [
+                {'sample_trial_id': 'detect-sample-0001', 'params': {'x': 0}},
+                {'sample_trial_id': 'detect-sample-0002', 'params': {'x': 1}},
+            ],
+        }]}}), encoding='utf-8')
+        component.close()
+        env.path.comp._runid = None
+        replay = ZemiComponent.from_best_report('@comp/params/test.toml', report_path)
+        try:
+            self.assertEqual(replay.playbooks[0].params['x'], 1)
+            self.assertEqual(replay.playbooks[0].sampler_config['max_samples'], 1)
+        finally:
+            replay.close()
+
+    def test_best_report_must_resolve_a_successful_sample(self):
+        self.component().close()
+        for payload in (
+            {},
+            {'job_trial': {'playbook_trials': [{'playbook_id': 'detect', 'status': 'failed'}]}},
+            {'job_trial': {'playbook_trials': [{'playbook_id': 'detect', 'status': 'succeeded',
+                                               'best_sample': 'missing', 'samples': []}]}},
+        ):
+            with self.subTest(payload=payload):
+                report_path = self.root / 'bad-report.json'
+                report_path.write_text(json.dumps(payload), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'best sample report'):
+                    ZemiComponent.from_best_report('@comp/params/test.toml', report_path)
+
 
 class AdaptiveTests(unittest.TestCase):
     def test_coordinate_follows_improving_anchor_and_direction(self):
