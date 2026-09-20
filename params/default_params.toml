@@ -52,6 +52,7 @@ model_name = "qwen35_4b"
 # model_name = "local_override"
 
 # ParamSpace example (replace the fixed values in a playbook above):
+# param_space_mode = "sampler" # Or "start_only" to run only the start/fixed sample.
 # temperature = { values = [0.0, 0.2, 0.5, 0.8], start = 0.2 }
 # seed = { range = { min = 1, max = 5, step = 1 }, start = 1 }
 #

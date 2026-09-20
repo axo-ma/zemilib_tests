@@ -702,6 +702,7 @@ class ComponentConventionTests(unittest.TestCase):
         ))
         self.assertIn("# temperature = { values =", text)
         self.assertIn("# seed = { range =", text)
+        self.assertIn('# param_space_mode = "sampler"', text)
         self.assertIn('# __include__ = { ref = "component.params.model" }', text)
         self.assertIn("# [playbooks.sampler]", text)
 

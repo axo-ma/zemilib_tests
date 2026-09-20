@@ -125,6 +125,7 @@ lifecycle = "job"
 id = "detect"
 path = "one.ipynb"
 arsenal = "local"
+param_space_mode = "sampler"
 [playbooks.params]
 x = { values = [0, 1], start = 0 }
 [playbooks.sampler]
@@ -171,6 +172,8 @@ direction = "maximize"
         component.close()
         report = json.loads(component.report.path.read_text(encoding='utf-8'))
         parent = report['job_trial']['playbook_trials'][0]
+        self.assertEqual(parent['param_space_mode'], 'sampler')
+        self.assertIn('ParamSpace mode: `sampler`', component.report.main_path.read_text(encoding='utf-8'))
         self.assertEqual(len(captured), 4)
         self.assertTrue(all(set(p['dataset_input']) == {'workbook_path', 'worksheet_name'} for p in captured))
         self.assertNotIn('ground_truth', json.dumps(captured))
