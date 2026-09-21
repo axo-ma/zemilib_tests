@@ -20,7 +20,7 @@ def document() -> dict:
             {"id": "remote", "lifecycle": "external", "params": {}},
         ],
         "playbooks": [
-            {"id": "one", "path": "one.ipynb", "arsenal": "local", "param_space_mode": "start_only", "params": {"temperature": {"values": [0.0, 0.2], "start": 0.2}}},
+            {"id": "one", "path": "one.ipynb", "arsenal": "local", "param_space_mode": "start_only", "params": {"temperature": {"values": [0.0, 0.2], "start": 0.2}}, "sampler": {"strategy": "grid"}},
             {"id": "two", "path": "two.ipynb", "arsenal": "remote", "params": {}},
         ],
     }
@@ -57,6 +57,15 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate Arsenal id"):
             validate_document(source)
 
+    def test_arsenals_and_playbook_reference_are_optional(self) -> None:
+        source = document()
+        del source["arsenals"]
+        for playbook in source["playbooks"]:
+            playbook.pop("arsenal", None)
+        validated = validate_document(source)
+        self.assertEqual(validated["arsenals"], [])
+        self.assertNotIn("arsenal", validated["playbooks"][0])
+
     def test_sampler_contract_is_validated(self) -> None:
         source = document()
         source["playbooks"][0]["param_space_mode"] = "sampler"
@@ -66,16 +75,18 @@ class SchemaTests(unittest.TestCase):
 
     def test_param_space_mode_schema_combinations_are_explicit(self) -> None:
         cases = []
+        source = document(); del source["playbooks"][0]["sampler"]
+        cases.append((source, "sampler is required.*temperature"))
         source = document(); del source["playbooks"][0]["param_space_mode"]
         cases.append((source, "param_space_mode is required.*temperature"))
-        source = document(); source["playbooks"][0]["param_space_mode"] = "sampler"
-        cases.append((source, 'requires playbooks\\[0\\]\\.sampler'))
         source = document(); source["playbooks"][0]["param_space_mode"] = "sample"
         cases.append((source, 'must be "start_only" or "sampler"'))
-        source = document(); source["playbooks"][0]["sampler"] = sampler_config()
-        cases.append((source, 'sampler is not allowed.*param_space_mode = "start_only"'))
-        source = document(); del source["playbooks"][0]["param_space_mode"]; source["playbooks"][0]["sampler"] = sampler_config()
-        cases.append((source, 'param_space_mode must be "sampler"'))
+        source = document(); source["playbooks"][0]["param_space_mode"] = "sampler"
+        cases.append((source, "sample_trial is required.*sampler"))
+        source = document(); source["playbooks"][0]["params"] = {"fixed": 1}; source["playbooks"][0].pop("param_space_mode")
+        cases.append((source, "sampler is not allowed.*all fixed"))
+        source = document(); source["playbooks"][0]["params"] = {"fixed": 1}; source["playbooks"][0].pop("sampler")
+        cases.append((source, "param_space_mode is not allowed.*all fixed"))
         for source, message in cases:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(ValueError, message):
@@ -84,7 +95,12 @@ class SchemaTests(unittest.TestCase):
         source = document()
         source["playbooks"][0]["params"] = {"fixed": 1}
         del source["playbooks"][0]["param_space_mode"]
+        del source["playbooks"][0]["sampler"]
         self.assertNotIn("param_space_mode", validate_document(source)["playbooks"][0])
+
+    def test_start_only_requires_and_accepts_sampler_without_sample_trial(self) -> None:
+        validated = validate_document(document())
+        self.assertEqual(validated["playbooks"][0]["sampler"], {"strategy": "grid"})
 
     def test_param_space_mode_accepts_select_wrapper(self) -> None:
         source = document()
@@ -243,6 +259,8 @@ param_space_mode = "start_only"
 locale = { ref = "system.params.locale" }
 device = { ref = "arsenals.local.params.device" }
 temperature = { values = [0.0, 0.2], start = 0.2 }
+[playbooks.sampler]
+strategy = "grid"
 '''
         (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
         component = ZemiComponent()
@@ -287,6 +305,8 @@ arsenal = "local"
 param_space_mode = { select = ["start_only", "sampler"] }
 [playbooks.params]
 temperature = { values = [0.0, 0.2], start = 0.2 }
+[playbooks.sampler]
+strategy = "grid"
 '''
         (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
         from unittest.mock import patch
@@ -294,7 +314,7 @@ temperature = { values = [0.0, 0.2], start = 0.2 }
             component = ZemiComponent()
         self.assertEqual(prompt.call_count, 1)
         self.assertEqual(component.playbooks[0].param_space_mode, "start_only")
-        self.assertIsNone(component.playbooks[0].sampler_config)
+        self.assertEqual(component.playbooks[0].sampler_config["strategy"], "grid")
         def record_run(playbook):
             entry = component.report.start_trial(playbook)
             component.report.finish_playbook(entry)
@@ -305,6 +325,7 @@ temperature = { values = [0.0, 0.2], start = 0.2 }
         component.close()
         report = json.loads(component.report.path.read_text(encoding="utf-8"))
         self.assertEqual(report["trials"][0]["param_space_mode"], "start_only")
+        self.assertNotIn("job_trial", report["trials"][0])
         self.assertIn("ParamSpace mode: start_only", component.report.main_path.read_text(encoding="utf-8"))
 
     def test_selected_sampler_mode_requires_sampler_after_selection(self) -> None:
@@ -322,13 +343,48 @@ arsenal = "local"
 param_space_mode = { select = ["start_only", "sampler"] }
 [playbooks.params]
 temperature = { values = [0.0, 0.2], start = 0.2 }
+[playbooks.sampler]
+strategy = "grid"
 '''
         (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
         from unittest.mock import patch
         with patch("builtins.input", return_value="2"), self.assertRaisesRegex(
-            ValueError, 'param_space_mode = "sampler" requires playbooks.one.sampler'
+            ValueError, 'sampler.sample_trial is required when param_space_mode = "sampler"'
         ):
             ZemiComponent()
+
+    def test_fixed_playbook_runs_without_arsenal_or_param_space(self) -> None:
+        content = '''
+[system]
+version = "0.3"
+[component]
+[[playbooks]]
+id = "one"
+path = "one.ipynb"
+[playbooks.params]
+fixed = 1
+'''
+        (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
+        from unittest.mock import patch
+        component = ZemiComponent()
+        playbook = component.playbooks[0]
+        self.assertIsNone(playbook.arsenal_id)
+        self.assertIsNone(playbook.param_space_mode)
+        self.assertIsNone(playbook.sampler_config)
+        self.assertIsNone(playbook.config["_v03_space"])
+        self.assertNotIn("service", playbook.params)
+        def record_run(current):
+            entry = component.report.start_trial(current)
+            component.report.finish_playbook(entry)
+            component.report.save()
+        with patch("zemi.component.Playbook.run", autospec=True, side_effect=record_run) as run, \
+             patch("zemi.arsenal.ArsenalSession") as session, patch("zemi.arsenal.begin") as begin:
+            component.run()
+        run.assert_called_once(); session.assert_not_called(); begin.assert_not_called()
+        component.close()
+        report = json.loads(component.report.path.read_text(encoding="utf-8"))
+        self.assertIsNone(report["trials"][0]["arsenal"])
+        self.assertNotIn("job_trial", report["trials"][0])
 
     def test_block_names_are_validated_after_reference_resolution(self) -> None:
         content = '''

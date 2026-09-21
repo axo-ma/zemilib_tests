@@ -160,11 +160,13 @@ playbook_name = "same.ipynb"
 count = { input = { prompt = "Count", type = "integer" } }
 enabled_flag = { input = { prompt = "Enabled", type = "boolean", default = true } }
 """))
-        with patch("builtins.input", side_effect=["7", ""]):
+        with patch("builtins.input", side_effect=["7", ""]), \
+             patch("zemi.arsenal.secrets.SecretStore.set") as persist:
             component = ZemiComponent()
         self.assertEqual(component.playbooks[0].params["count"], 7)
         self.assertIs(component.playbooks[0].params["enabled_flag"], True)
         self.assertEqual(component.playbooks[0].resolved_params["count"]["source"], "input")
+        persist.assert_not_called()
         component.close()
 
     def test_selected_array_can_contain_path_input(self) -> None:

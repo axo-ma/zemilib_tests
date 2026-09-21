@@ -283,6 +283,48 @@ class AdaptiveTests(unittest.TestCase):
         )
         self.assertEqual(result.best('score', 'maximize').sample.values, {'x': 1, 'y': 1, 'z': 1})
 
+    def test_block_coordinate_order_restart_uniqueness_and_exhaustion(self):
+        space = ParamSpace.from_params({
+            'x': {'values': [0, 1], 'start': 0},
+            'y': {'values': [0, 1], 'start': 0},
+        })
+        sampler = ParamSampler(
+            space, 'block_coordinate', max_samples=10,
+            blocks=[['x'], ['y']], objective_metric='score', direction='maximize',
+        )
+        scores = {(0, 0): 0, (1, 0): 0, (0, 1): 10, (1, 1): 11}
+        result = run_playbook_trial(
+            sampler=sampler, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: {'score': scores[(sample.values['x'], sample.values['y'])]},
+            metric='score', direction='maximize',
+        )
+        values = [item.sample.values for item in result.history]
+        self.assertEqual(values, [
+            {'x': 0, 'y': 0}, {'x': 1, 'y': 0},
+            {'x': 0, 'y': 1}, {'x': 1, 'y': 1},
+        ])
+        self.assertEqual(len({item.sample.key() for item in result.history}), len(result.history))
+        self.assertEqual(len(result.history), 4)  # finite space exhausted before max_samples
+
+        limited = ParamSampler(space, 'block_coordinate', max_samples=3, blocks=[['x'], ['y']])
+        limited_result = run_playbook_trial(
+            sampler=limited, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: {'score': 0}, metric='score', direction='maximize',
+        )
+        self.assertEqual(len(limited_result.history), 3)
+
+    def test_block_coordinate_respects_declared_block_order(self):
+        space = ParamSpace.from_params({
+            'x': {'values': [0, 1], 'start': 0},
+            'y': {'values': [0, 1], 'start': 0},
+        })
+        sampler = ParamSampler(space, 'block_coordinate', max_samples=2, blocks=[['y'], ['x']])
+        result = run_playbook_trial(
+            sampler=sampler, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: {'score': 0}, metric='score', direction='maximize',
+        )
+        self.assertEqual(result.history[1].sample.values, {'x': 0, 'y': 1})
+
     def test_invalid_objective_is_failed_observation_and_run_failure_retained(self):
         sampler = ParamSampler(ParamSpace.from_params({'x': {'values': [0, 1], 'start': 0}}))
         def run(sample, item):

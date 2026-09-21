@@ -90,6 +90,14 @@ class SecretStoreTests(unittest.TestCase):
         ask.assert_not_called()
         self.assertIn('KEY="s e c # ret"', self.path.read_text(encoding="utf-8"))
 
+    def test_validation_is_optional_and_env_is_only_a_store_key(self):
+        reference = {"env": "VISIBLE_VALUE", "prompt": "Visible value"}
+        with patch.dict(os.environ, {"VISIBLE_VALUE": "process-value"}), \
+             patch("builtins.input", return_value="") as ask:
+            self.assertEqual(self.store.resolve(reference), "")
+        ask.assert_called_once()
+        self.assertEqual(self.store.get("VISIBLE_VALUE"), "")
+
     def test_suggested_retry_preserves_comments_and_other_keys(self):
         self.path.write_text("# keep\nOTHER=x\nURL=bad\n", encoding="utf-8")
         with patch("builtins.input", side_effect=["bad", ""]):
