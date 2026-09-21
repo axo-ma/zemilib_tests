@@ -374,6 +374,26 @@ playbook_name = "two.ipynb"
         self.assertEqual(events, ["begin", "one.ipynb", "two.ipynb", "end"])
         component.close()
 
+    def test_managed_group_starts_selected_model_before_playbook(self) -> None:
+        component = self.component('''
+[[arsenals]]
+name = "managed"
+arsenal_start_and_stop_at_job_level = true
+arsenal_config_path = "@comp/managed.toml"
+[[arsenals.playbooks_params]]
+playbook_name = "one.ipynb"
+[arsenals.playbooks_params.playbook_params]
+model_name = "qwen35_4b"
+''')
+        events = []
+        component.playbooks[0].run = lambda: events.append("playbook")
+        session = Mock()
+        session.model.side_effect = lambda name: events.append(f"model:{name}")
+        with patch("zemi.arsenal.ArsenalSession", return_value=session), patch("zemi.arsenal.begin", side_effect=lambda *_a, **_k: events.append("begin")), patch("zemi.arsenal.end", side_effect=lambda *_a, **_k: events.append("end")):
+            component.run()
+        self.assertEqual(events, ["begin", "model:qwen35_4b", "playbook", "end"])
+        component.close()
+
     def test_unmanaged_group_inherits_default_and_allows_notebook_override(self) -> None:
         component = self.component('''
 [[arsenals]]
@@ -628,14 +648,9 @@ class ComponentConventionTests(unittest.TestCase):
                     if cell is not parameters[0] and cell.get("cell_type") == "code"
                 )
                 self.assertIn("ArsenalSession(arsenal_config_path)", working_source)
-                self.assertIn(
-                    "stop_before_begin=not arsenal_start_and_stop_at_job_level",
-                    working_source,
-                )
-                self.assertIn(
-                    "stop_after_end=not arsenal_start_and_stop_at_job_level",
-                    working_source,
-                )
+                self.assertIn("if not arsenal_start_and_stop_at_job_level", working_source)
+                self.assertIn("stop_before_begin=True", working_source)
+                self.assertIn("stop_after_end=True", working_source)
 
     def test_all_arsenal_notebooks_keep_policy_out_of_working_cells(self) -> None:
         arsenal_notebooks = []
@@ -666,10 +681,7 @@ class ComponentConventionTests(unittest.TestCase):
                     working_source,
                     r"ArsenalSession\([\"']@(?:comp|inst)/",
                 )
-                self.assertNotRegex(
-                    working_source,
-                    r"stop_(?:before_begin|after_end)=(?:True|False)",
-                )
+                self.assertIn("if not arsenal_start_and_stop_at_job_level", working_source)
 
     def test_template_style_output_parameters_example_has_no_required_tag(self) -> None:
         notebook = json.loads((PROJECT_ROOT / "playbook.ipynb").read_text(encoding="utf-8"))
