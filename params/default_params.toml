@@ -1,5 +1,5 @@
 [system]
-version = "0.3"
+version = "0.5"
 
 [system.params]
 
@@ -52,20 +52,15 @@ model_name = "qwen35_4b"
 # model_name = "local_override"
 
 # ParamSpace example (replace the fixed values in a playbook above):
-# param_space_mode = "sampler" # Or "start_only" to run only the start/fixed sample.
 # temperature = { values = [0.0, 0.2, 0.5, 0.8], start = 0.2 }
 # seed = { range = { min = 1, max = 5, step = 1 }, start = 1 }
 #
-# [playbooks.sampler]
+# [playbooks.optimizer]
 # strategy = "block_coordinate"
 # max_samples = 20
 # seed = 42
 # blocks = [["temperature", "seed"]]
 #
-# [playbooks.sampler.objective]
-# metric = "quality"
-# direction = "maximize"
-#
-# [playbooks.sampler.sample_trial]
-# implementation = "@comp/sample_trials/default.py:DefaultSampleTrial"
-# path = "@comp/data/eval.jsonl"
+# [playbooks.optimizer.sample_trial]
+# type = "@comp/sample_trials/default.py:DefaultSampleTrial"
+# dataset = "@comp/data/eval.jsonl"

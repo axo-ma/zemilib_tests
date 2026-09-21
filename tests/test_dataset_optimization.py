@@ -11,7 +11,7 @@ from openpyxl import Workbook, load_workbook
 from zemi import env
 from zemi.component import ZemiComponent
 from zemi.dataset import RunContext, resolve_adapter, table_dataset, table_evaluator
-from zemi.params import ParamSampler, ParamSpace, SampleTrialResult, run_playbook_trial
+from zemi.params import ParamSpace, PlaybookOptimizer, SampleTrialResult, run_playbook_trial
 
 
 class DatasetTests(unittest.TestCase):
@@ -79,7 +79,7 @@ class DatasetTests(unittest.TestCase):
 
     def test_exact_one_to_one_micro_metrics_errors_and_negatives(self):
         items = self.load()
-        trial = SampleTrialResult(ParamSpace.from_params({}).start, [
+        trial = SampleTrialResult(ParamSpace(config={}).start, [
             {'item': items[0], 'prediction': {'ranges': ['A1:B2', 'A1:B2', 'A1:B3']}},
             {'item': items[1], 'prediction': {'ranges': []}},
             {'item': items[0], 'prediction': None, 'error': 'model failed'},
@@ -115,7 +115,7 @@ class DatasetTests(unittest.TestCase):
         Path('params').mkdir()
         Path('params/test.toml').write_text('''
 [system]
-version = "0.3"
+version = "0.5"
 [component]
 [[arsenals]]
 id = "local"
@@ -125,19 +125,15 @@ lifecycle = "job"
 id = "detect"
 path = "one.ipynb"
 arsenal = "local"
-param_space_mode = "sampler"
 [playbooks.params]
 x = { values = [0, 1], start = 0 }
-[playbooks.sampler]
+[playbooks.optimizer]
 strategy = "block_coordinate"
 max_samples = 2
 blocks = [["x"]]
-[playbooks.sampler.objective]
-metric = "f1"
-direction = "maximize"
-[playbooks.sampler.sample_trial]
-implementation = "table_detection"
-path = "@comp/data.json"
+[playbooks.optimizer.sample_trial]
+type = "@comp/zemi/sample_trial.py:TableDetectionSampleTrial"
+dataset = "@comp/data.json"
 ''', encoding='utf-8')
         return ZemiComponent('@comp/params/test.toml')
 
@@ -172,9 +168,8 @@ path = "@comp/data.json"
         component.close()
         report = json.loads(component.report.path.read_text(encoding='utf-8'))
         parent = report['job_trial']['playbook_trials'][0]
-        self.assertEqual(parent['param_space_mode'], 'sampler')
-        self.assertEqual(parent['sampler']['blocks'], [['x']])
-        self.assertIn('ParamSpace mode: `sampler`', component.report.main_path.read_text(encoding='utf-8'))
+        self.assertEqual(parent['optimizer']['blocks'], [['x']])
+        self.assertIn('## Optimization:', component.report.main_path.read_text(encoding='utf-8'))
         self.assertIn('"blocks": [', component.report.main_path.read_text(encoding='utf-8'))
         self.assertEqual(len(captured), 4)
         self.assertTrue(all(set(p['dataset_input']) == {'workbook_path', 'worksheet_name'} for p in captured))
@@ -233,7 +228,7 @@ path = "@comp/data.json"
         replay = ZemiComponent.from_best_report('@comp/params/test.toml', report_path)
         try:
             self.assertEqual(replay.playbooks[0].params['x'], 1)
-            self.assertEqual(replay.playbooks[0].sampler_config['max_samples'], 1)
+            self.assertEqual(replay.playbooks[0].optimizer_config['max_samples'], 1)
         finally:
             replay.close()
 
@@ -248,29 +243,26 @@ class CustomTrial(SampleTrial):
 
     def evaluate(self, *, runs):
         quality = runs[0]["prediction"]["quality"]
-        return {"quality": quality, "diagnostic_count": len(runs)}, {"kind": "custom"}
+        return {"quality": quality, "diagnostic_count": len(runs)}, quality, {"kind": "custom"}
 
-    def render_report(self, history, sampler_config, best_sample):
+    def render_report(self, history, optimizer_config, best_sample):
         return "### Custom SampleTrial report\\n\\nDomain-owned content."
 ''', encoding='utf-8')
         Path('params').mkdir(exist_ok=True)
         Path('params/custom.toml').write_text('''
 [system]
-version = "0.3"
+version = "0.5"
 [component]
 [[playbooks]]
 id = "custom"
 path = "one.ipynb"
-param_space_mode = "sampler"
 [playbooks.params]
 x = { values = [0, 1], start = 0 }
-[playbooks.sampler]
+[playbooks.optimizer]
 strategy = "grid"
-[playbooks.sampler.objective]
-metric = "quality"
-direction = "maximize"
-[playbooks.sampler.sample_trial]
-implementation = "@comp/custom_trial.py:CustomTrial"
+[playbooks.optimizer.sample_trial]
+type = "@comp/custom_trial.py:CustomTrial"
+dataset = "@comp/data.json"
 ''', encoding='utf-8')
         component = ZemiComponent('@comp/params/custom.toml')
         def notebook(playbook):
@@ -306,58 +298,58 @@ implementation = "@comp/custom_trial.py:CustomTrial"
 
 
 class AdaptiveTests(unittest.TestCase):
-    def test_sampler_next_and_best_use_history_score(self):
-        space = ParamSpace.from_params({'x': {'values': [0, 1], 'start': 0}})
-        sampler = ParamSampler(space, direction='minimize')
-        first = sampler.next_sample([])
+    def test_optimizer_next_and_best_use_history_score(self):
+        space = ParamSpace(config={'x': {'values': [0, 1], 'start': 0}})
+        optimizer = PlaybookOptimizer(config={'strategy': 'grid'}, param_space=space)
+        first = optimizer.next_param_sample([])
         history = [SampleTrialResult(first, [], {'loss': 3}, score=3)]
-        second = sampler.next_sample(history)
-        history.append(SampleTrialResult(second, [], {'loss': 1, 'other': 9}, score=1))
-        self.assertEqual(sampler.best_sample(history).values, {'x': 1})
-        self.assertIsNone(sampler.next_sample(history))
+        second = optimizer.next_param_sample(history)
+        history.append(SampleTrialResult(second, [], {'loss': 1, 'other': 9}, score=4))
+        self.assertEqual(optimizer.best_param_sample(history).values, {'x': 1})
+        self.assertIsNone(optimizer.next_param_sample(history))
 
-    def test_coordinate_follows_improving_anchor_and_direction(self):
+    def test_coordinate_follows_improving_anchor(self):
         for strategy, extra in [('coordinate', {}), ('block_coordinate', {'blocks': [['x'], ['y']]})]:
-            for direction, sign in [('maximize', 1), ('minimize', -1)]:
-                with self.subTest(strategy=strategy, direction=direction):
-                    space = ParamSpace.from_params({key: {'values': [0, 1], 'start': 0} for key in ('x', 'y')})
-                    sampler = ParamSampler(space, strategy, max_samples=4, objective_metric='score', direction=direction, **extra)
-                    result = run_playbook_trial(sampler=sampler, dataset=[None], run=lambda s, i: None,
-                        evaluator=lambda s, r: {'score': sign*(2*s.values['x']+s.values['y'])}, metric='score', direction=direction)
-                    self.assertEqual(result.best('score', direction).sample.values, {'x': 1, 'y': 1})
+            with self.subTest(strategy=strategy):
+                space = ParamSpace(config={key: {'values': [0, 1], 'start': 0} for key in ('x', 'y')})
+                optimizer = PlaybookOptimizer(
+                    config={'strategy': strategy, 'max_samples': 4, **extra}, param_space=space
+                )
+                result = run_playbook_trial(optimizer=optimizer, dataset=[None], run=lambda s, i: None,
+                    evaluator=lambda s, r: ({'quality': 2*s.values['x']+s.values['y']}, 2*s.values['x']+s.values['y']))
+                self.assertEqual(optimizer.best_param_sample(result.history).values, {'x': 1, 'y': 1})
 
     def test_block_coordinate_can_improve_jointly_with_unlisted_singletons(self):
-        space = ParamSpace.from_params({
+        space = ParamSpace(config={
             'x': {'values': [0, 1], 'start': 0},
             'y': {'values': [0, 1], 'start': 0},
             'z': {'values': [0, 1], 'start': 0},
         })
-        sampler = ParamSampler(
-            space, 'block_coordinate', max_samples=6,
-            blocks=[['x', 'y']], objective_metric='score', direction='maximize',
+        optimizer = PlaybookOptimizer(
+            config={'strategy': 'block_coordinate', 'max_samples': 6, 'blocks': [['x', 'y']]},
+            param_space=space,
         )
         result = run_playbook_trial(
-            sampler=sampler, dataset=[None], run=lambda sample, item: None,
-            evaluator=lambda sample, runs: {
-                'score': 10 * (sample.values['x'] == sample.values['y'] == 1) + sample.values['z']
-            }, metric='score', direction='maximize',
+            optimizer=optimizer, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: ({'quality': 10 * (sample.values['x'] == sample.values['y'] == 1) + sample.values['z']},
+                10 * (sample.values['x'] == sample.values['y'] == 1) + sample.values['z']),
         )
-        self.assertEqual(result.best('score', 'maximize').sample.values, {'x': 1, 'y': 1, 'z': 1})
+        self.assertEqual(optimizer.best_param_sample(result.history).values, {'x': 1, 'y': 1, 'z': 1})
 
     def test_block_coordinate_order_restart_uniqueness_and_exhaustion(self):
-        space = ParamSpace.from_params({
+        space = ParamSpace(config={
             'x': {'values': [0, 1], 'start': 0},
             'y': {'values': [0, 1], 'start': 0},
         })
-        sampler = ParamSampler(
-            space, 'block_coordinate', max_samples=10,
-            blocks=[['x'], ['y']], objective_metric='score', direction='maximize',
+        optimizer = PlaybookOptimizer(
+            config={'strategy': 'block_coordinate', 'max_samples': 10, 'blocks': [['x'], ['y']]},
+            param_space=space,
         )
         scores = {(0, 0): 0, (1, 0): 0, (0, 1): 10, (1, 1): 11}
         result = run_playbook_trial(
-            sampler=sampler, dataset=[None], run=lambda sample, item: None,
-            evaluator=lambda sample, runs: {'score': scores[(sample.values['x'], sample.values['y'])]},
-            metric='score', direction='maximize',
+            optimizer=optimizer, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: ({'quality': scores[(sample.values['x'], sample.values['y'])]},
+                                             scores[(sample.values['x'], sample.values['y'])]),
         )
         values = [item.sample.values for item in result.history]
         self.assertEqual(values, [
@@ -367,31 +359,40 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(len({item.sample.key() for item in result.history}), len(result.history))
         self.assertEqual(len(result.history), 4)  # finite space exhausted before max_samples
 
-        limited = ParamSampler(space, 'block_coordinate', max_samples=3, blocks=[['x'], ['y']])
+        limited = PlaybookOptimizer(
+            config={'strategy': 'block_coordinate', 'max_samples': 3, 'blocks': [['x'], ['y']]},
+            param_space=space,
+        )
         limited_result = run_playbook_trial(
-            sampler=limited, dataset=[None], run=lambda sample, item: None,
-            evaluator=lambda sample, runs: {'score': 0}, metric='score', direction='maximize',
+            optimizer=limited, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: ({'quality': 0}, 0),
         )
         self.assertEqual(len(limited_result.history), 3)
 
     def test_block_coordinate_respects_declared_block_order(self):
-        space = ParamSpace.from_params({
+        space = ParamSpace(config={
             'x': {'values': [0, 1], 'start': 0},
             'y': {'values': [0, 1], 'start': 0},
         })
-        sampler = ParamSampler(space, 'block_coordinate', max_samples=2, blocks=[['y'], ['x']])
+        optimizer = PlaybookOptimizer(
+            config={'strategy': 'block_coordinate', 'max_samples': 2, 'blocks': [['y'], ['x']]},
+            param_space=space,
+        )
         result = run_playbook_trial(
-            sampler=sampler, dataset=[None], run=lambda sample, item: None,
-            evaluator=lambda sample, runs: {'score': 0}, metric='score', direction='maximize',
+            optimizer=optimizer, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: ({'quality': 0}, 0),
         )
         self.assertEqual(result.history[1].sample.values, {'x': 0, 'y': 1})
 
-    def test_invalid_objective_is_failed_observation_and_run_failure_retained(self):
-        sampler = ParamSampler(ParamSpace.from_params({'x': {'values': [0, 1], 'start': 0}}))
+    def test_invalid_score_is_failed_observation_and_run_failure_retained(self):
+        optimizer = PlaybookOptimizer(
+            config={'strategy': 'grid'},
+            param_space=ParamSpace(config={'x': {'values': [0, 1], 'start': 0}}),
+        )
         def run(sample, item):
             raise RuntimeError('failure')
-        result = run_playbook_trial(sampler=sampler, dataset=[1, 2], run=run,
-            evaluator=lambda s, r: {'score': float('nan')}, metric='score', direction='maximize')
+        result = run_playbook_trial(optimizer=optimizer, dataset=[1, 2], run=run,
+            evaluator=lambda s, r: ({'quality': 0}, float('nan')))
         self.assertEqual(len(result.history), 2)
         self.assertTrue(all(s.error and len(s.runs) == 2 for s in result.history))
         self.assertIsNone(result.best('score', 'maximize'))

@@ -79,7 +79,7 @@ checks, and dependency management through that interpreter.
   is a consumer-facing component template, not the library development or test
   location.
 - Before changing the parameter mechanism, trials, samplers, evaluators, or
-  related configuration, read `zemi/docs/ZEMI_PARAMS_0.3.md` and preserve its
+  related configuration, read `zemi/docs/ZEMI_PARAMS_0.5.md` and preserve its
   structural-section, resolution, and lifecycle contracts.
 - Store ZEMI library specifications and full usage examples in the `zemi`
   library repository, not in this parent development/test repository.

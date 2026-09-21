@@ -703,7 +703,7 @@ class ComponentConventionTests(unittest.TestCase):
             params = tomllib.load(file)
         self.assertEqual(len(params["arsenals"]), 1)
         arsenal = params["arsenals"][0]
-        self.assertEqual(params["system"]["version"], "0.3")
+        self.assertEqual(params["system"]["version"], "0.5")
         self.assertEqual(arsenal["id"], "local-models")
         self.assertEqual(arsenal["lifecycle"], "job")
         self.assertEqual(arsenal["config_path"], "@comp/zemi/llm_curated_set_model_mode.toml")
@@ -714,9 +714,9 @@ class ComponentConventionTests(unittest.TestCase):
         ))
         self.assertIn("# temperature = { values =", text)
         self.assertIn("# seed = { range =", text)
-        self.assertIn('# param_space_mode = "sampler"', text)
+        self.assertNotIn('param_space_mode', text)
         self.assertIn('# __include__ = { ref = "component.params.model" }', text)
-        self.assertIn("# [playbooks.sampler]", text)
+        self.assertIn("# [playbooks.optimizer]", text)
         self.assertIn('# blocks = [["temperature", "seed"]]', text)
 
     def test_architecture_spec_links_normative_contracts(self) -> None:
@@ -724,7 +724,7 @@ class ComponentConventionTests(unittest.TestCase):
         for contract in (
             "ZEMI Instance → System → Component → Playbook",
             "JobTrial → PlaybookTrial → SampleTrial → PlaybookRun",
-            "ZEMI_PARAMS_0.3.md",
+            "ZEMI_PARAMS_0.5.md",
             "DATASET_OPTIMIZATION.md",
             "ARSENAL_ENDPOINTS.md",
             "@inst/_inputs/values.env",
