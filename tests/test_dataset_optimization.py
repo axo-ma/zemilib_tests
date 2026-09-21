@@ -132,14 +132,12 @@ x = { values = [0, 1], start = 0 }
 strategy = "block_coordinate"
 max_samples = 2
 blocks = [["x"]]
-[playbooks.sampler.sample_trial.dataset]
-adapter = "table_detection"
-path = "@comp/data.json"
-[playbooks.sampler.sample_trial.evaluator]
-adapter = "table_detection"
-[playbooks.sampler.sample_trial.objective]
+[playbooks.sampler.objective]
 metric = "f1"
 direction = "maximize"
+[playbooks.sampler.sample_trial]
+implementation = "table_detection"
+path = "@comp/data.json"
 ''', encoding='utf-8')
         return ZemiComponent('@comp/params/test.toml')
 
@@ -239,6 +237,59 @@ direction = "maximize"
         finally:
             replay.close()
 
+    def test_custom_sample_trial_is_the_single_extension_point(self):
+        Path('one.ipynb').write_text(json.dumps({'cells': [], 'metadata': {}, 'nbformat': 4, 'nbformat_minor': 5}))
+        Path('custom_trial.py').write_text('''
+from zemi.sample_trial import SampleTrial
+
+class CustomTrial(SampleTrial):
+    def load_dataset(self):
+        return [{"id": "only", "input": {"value": 1}}]
+
+    def evaluate(self, *, runs):
+        quality = runs[0]["prediction"]["quality"]
+        return {"quality": quality, "diagnostic_count": len(runs)}, {"kind": "custom"}
+
+    def render_report(self, history, sampler_config, best_sample):
+        return "### Custom SampleTrial report\\n\\nDomain-owned content."
+''', encoding='utf-8')
+        Path('params').mkdir(exist_ok=True)
+        Path('params/custom.toml').write_text('''
+[system]
+version = "0.3"
+[component]
+[[playbooks]]
+id = "custom"
+path = "one.ipynb"
+param_space_mode = "sampler"
+[playbooks.params]
+x = { values = [0, 1], start = 0 }
+[playbooks.sampler]
+strategy = "grid"
+[playbooks.sampler.objective]
+metric = "quality"
+direction = "maximize"
+[playbooks.sampler.sample_trial]
+implementation = "@comp/custom_trial.py:CustomTrial"
+''', encoding='utf-8')
+        component = ZemiComponent('@comp/params/custom.toml')
+        def notebook(playbook):
+            entry = component.report.start_trial(playbook)
+            entry['output_params'] = {'quality': playbook.params['x']}
+            component.report.finish_playbook(entry)
+        with patch('zemi.component.Playbook.run', notebook):
+            component.run()
+        component.close()
+        parent = component.report.data['job_trial']['playbook_trials'][0]
+        self.assertEqual([sample['score'] for sample in parent['samples']], [0.0, 1.0])
+        self.assertEqual(parent['samples'][1]['metrics'], {'quality': 1.0, 'diagnostic_count': 1.0})
+        self.assertEqual(parent['samples'][1]['feedback'], {'kind': 'custom'})
+        self.assertEqual(parent['best_params'], {'x': 1})
+        self.assertIn('Custom SampleTrial report', component.report.main_path.read_text(encoding='utf-8'))
+        detailed = component.run_directory / parent['report_markdown']
+        self.assertTrue(detailed.is_file())
+        self.assertIn('Domain-owned content', detailed.read_text(encoding='utf-8'))
+
     def test_best_report_must_resolve_a_successful_sample(self):
         self.component().close()
         for payload in (
@@ -255,6 +306,16 @@ direction = "maximize"
 
 
 class AdaptiveTests(unittest.TestCase):
+    def test_sampler_next_and_best_use_history_score(self):
+        space = ParamSpace.from_params({'x': {'values': [0, 1], 'start': 0}})
+        sampler = ParamSampler(space, direction='minimize')
+        first = sampler.next_sample([])
+        history = [SampleTrialResult(first, [], {'loss': 3}, score=3)]
+        second = sampler.next_sample(history)
+        history.append(SampleTrialResult(second, [], {'loss': 1, 'other': 9}, score=1))
+        self.assertEqual(sampler.best_sample(history).values, {'x': 1})
+        self.assertIsNone(sampler.next_sample(history))
+
     def test_coordinate_follows_improving_anchor_and_direction(self):
         for strategy, extra in [('coordinate', {}), ('block_coordinate', {'blocks': [['x'], ['y']]})]:
             for direction, sign in [('maximize', 1), ('minimize', -1)]:

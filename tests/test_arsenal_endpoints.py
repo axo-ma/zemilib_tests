@@ -13,7 +13,10 @@ from unittest.mock import patch
 
 from zemi import arsenal, env, toml
 from zemi.arsenal import ArsenalSession, UnsupportedProtocolError
-from zemi.arsenal.secrets import ArsenalEnvError, SecretStore
+from zemi.inputs import InputError, InputStore
+
+ArsenalEnvError = InputError
+SecretStore = InputStore
 
 
 def ref(name, secret=False, validate="non_empty", suggested=None):
@@ -97,6 +100,34 @@ class SecretStoreTests(unittest.TestCase):
             self.assertEqual(self.store.resolve(reference), "")
         ask.assert_called_once()
         self.assertEqual(self.store.get("VISIBLE_VALUE"), "")
+
+    def test_visible_secret_ephemeral_and_persistent_combinations(self):
+        ephemeral = InputStore(self.root / "ephemeral.env", legacy_path=self.root / "none.env")
+        with patch("builtins.input", return_value="visible"):
+            self.assertEqual(ephemeral.resolve({"prompt": "Visible"}), "visible")
+        self.assertFalse(ephemeral.path.exists())
+        with patch("getpass.getpass", return_value="hidden"):
+            self.assertEqual(ephemeral.resolve({"prompt": "Hidden", "secret": True}), "hidden")
+        self.assertFalse(ephemeral.path.exists())
+
+        with patch("builtins.input", return_value="saved-visible"):
+            self.assertEqual(self.store.resolve({"env": "VISIBLE", "prompt": "Visible"}), "saved-visible")
+        with patch("getpass.getpass", return_value="saved-hidden"):
+            self.assertEqual(self.store.resolve({"env": "SECRET", "prompt": "Secret", "secret": True}), "saved-hidden")
+        with patch("builtins.input") as plain, patch("getpass.getpass") as hidden:
+            self.assertEqual(self.store.resolve({"env": "VISIBLE"}), "saved-visible")
+            self.assertEqual(self.store.resolve({"env": "SECRET", "secret": True}), "saved-hidden")
+        plain.assert_not_called(); hidden.assert_not_called()
+
+    def test_legacy_arsenal_store_is_migrated_on_reuse(self):
+        legacy = self.root / "arsenal.env"
+        current = self.root / "values.env"
+        legacy.write_text("MIGRATED=old-value\n", encoding="utf-8")
+        store = InputStore(current, legacy_path=legacy)
+        with patch("builtins.input") as ask:
+            self.assertEqual(store.resolve({"env": "MIGRATED"}), "old-value")
+        ask.assert_not_called()
+        self.assertEqual(InputStore(current, legacy_path=self.root / "none.env").get("MIGRATED"), "old-value")
 
     def test_suggested_retry_preserves_comments_and_other_keys(self):
         self.path.write_text("# keep\nOTHER=x\nURL=bad\n", encoding="utf-8")

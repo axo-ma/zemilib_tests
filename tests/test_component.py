@@ -727,7 +727,7 @@ class ComponentConventionTests(unittest.TestCase):
             "ZEMI_PARAMS_0.3.md",
             "DATASET_OPTIMIZATION.md",
             "ARSENAL_ENDPOINTS.md",
-            "@inst/_secrets/arsenal.env",
+            "@inst/_inputs/values.env",
         ):
             self.assertIn(contract, text)
 

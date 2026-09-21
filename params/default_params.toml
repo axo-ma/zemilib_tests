@@ -62,13 +62,10 @@ model_name = "qwen35_4b"
 # seed = 42
 # blocks = [["temperature", "seed"]]
 #
-# [playbooks.sampler.sample_trial.dataset]
-# adapter = "jsonl"
-# path = "@comp/data/eval.jsonl"
-#
-# [playbooks.sampler.sample_trial.evaluator]
-# adapter = "@comp/evaluators/default.py:evaluate"
-#
-# [playbooks.sampler.sample_trial.objective]
+# [playbooks.sampler.objective]
 # metric = "quality"
 # direction = "maximize"
+#
+# [playbooks.sampler.sample_trial]
+# implementation = "@comp/sample_trials/default.py:DefaultSampleTrial"
+# path = "@comp/data/eval.jsonl"

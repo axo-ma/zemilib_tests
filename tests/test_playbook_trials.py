@@ -161,12 +161,28 @@ count = { input = { prompt = "Count", type = "integer" } }
 enabled_flag = { input = { prompt = "Enabled", type = "boolean", default = true } }
 """))
         with patch("builtins.input", side_effect=["7", ""]), \
-             patch("zemi.arsenal.secrets.SecretStore.set") as persist:
+             patch("zemi.inputs.InputStore.set") as persist:
             component = ZemiComponent()
         self.assertEqual(component.playbooks[0].params["count"], 7)
         self.assertIs(component.playbooks[0].params["enabled_flag"], True)
         self.assertEqual(component.playbooks[0].resolved_params["count"]["source"], "input")
         persist.assert_not_called()
+        component.close()
+
+    def test_secret_input_is_available_to_playbook_but_masked_in_report(self) -> None:
+        self.write_default(_config('''
+[[playbooks_params]]
+playbook_name = "same.ipynb"
+[playbooks_params.playbook_params]
+token = { input = { prompt = "Token", env = "API_TOKEN", validate = "non_empty", secret = true } }
+'''))
+        with patch("zemi.inputs.InputStore.resolve", return_value="top-secret"):
+            component = ZemiComponent()
+        self.assertEqual(component.playbooks[0].params["token"], "top-secret")
+        self.assertEqual(component.playbooks[0].resolved_params["token"]["value"], "***")
+        entry = component.report.start_trial(component.playbooks[0])
+        self.assertEqual(entry["input_params"]["token"], "***")
+        self.assertNotIn("top-secret", component.report.path.read_text(encoding="utf-8"))
         component.close()
 
     def test_selected_array_can_contain_path_input(self) -> None:

@@ -29,11 +29,8 @@ def document() -> dict:
 def sampler_config() -> dict:
     return {
         "strategy": "random", "max_samples": 2,
-        "sample_trial": {
-            "dataset": {"adapter": "jsonl", "path": "@comp/data/eval.jsonl"},
-            "evaluator": {"adapter": "@comp/evaluate.py:evaluate"},
-            "objective": {"metric": "score", "direction": "maximize"},
-        },
+        "objective": {"metric": "score", "direction": "maximize"},
+        "sample_trial": {"implementation": "table_detection", "path": "@comp/data/eval.json"},
     }
 
 
@@ -72,6 +69,22 @@ class SchemaTests(unittest.TestCase):
         source["playbooks"][0]["sampler"] = sampler_config()
         validated = validate_document(source)
         self.assertEqual(validated["playbooks"][0]["sampler"]["strategy"], "random")
+        self.assertEqual(validated["playbooks"][0]["sampler"]["objective"]["metric"], "score")
+
+    def test_legacy_sample_trial_blocks_are_explicitly_normalized(self) -> None:
+        source = document()
+        source["playbooks"][0]["param_space_mode"] = "sampler"
+        source["playbooks"][0]["sampler"] = {
+            "strategy": "grid",
+            "sample_trial": {
+                "dataset": {"adapter": "jsonl", "path": "@comp/data.jsonl"},
+                "evaluator": {"adapter": "@comp/evaluate.py:evaluate"},
+                "objective": {"metric": "quality", "direction": "minimize"},
+            },
+        }
+        sampler = validate_document(source)["playbooks"][0]["sampler"]
+        self.assertEqual(sampler["sample_trial"]["implementation"], "legacy")
+        self.assertEqual(sampler["objective"], {"metric": "quality", "direction": "minimize"})
 
     def test_param_space_mode_schema_combinations_are_explicit(self) -> None:
         cases = []
@@ -83,6 +96,8 @@ class SchemaTests(unittest.TestCase):
         cases.append((source, 'must be "start_only" or "sampler"'))
         source = document(); source["playbooks"][0]["param_space_mode"] = "sampler"
         cases.append((source, "sample_trial is required.*sampler"))
+        source = document(); source["playbooks"][0]["param_space_mode"] = "sampler"; source["playbooks"][0]["sampler"]["sample_trial"] = {"implementation": "table_detection"}
+        cases.append((source, "objective is required.*sampler"))
         source = document(); source["playbooks"][0]["params"] = {"fixed": 1}; source["playbooks"][0].pop("param_space_mode")
         cases.append((source, "sampler is not allowed.*all fixed"))
         source = document(); source["playbooks"][0]["params"] = {"fixed": 1}; source["playbooks"][0].pop("sampler")
@@ -407,14 +422,12 @@ temperature = { ref = "component.params.search.temperature" }
 strategy = "block_coordinate"
 max_samples = 2
 blocks = [["temperature"]]
-[playbooks.sampler.sample_trial.dataset]
-adapter = "jsonl"
-path = "@comp/data.jsonl"
-[playbooks.sampler.sample_trial.evaluator]
-adapter = "@comp/evaluate.py:evaluate"
-[playbooks.sampler.sample_trial.objective]
+[playbooks.sampler.objective]
 metric = "score"
 direction = "maximize"
+[playbooks.sampler.sample_trial]
+implementation = "table_detection"
+path = "@comp/data.json"
 '''
         (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
         component = ZemiComponent()
