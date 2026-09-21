@@ -129,7 +129,9 @@ param_space_mode = "sampler"
 [playbooks.params]
 x = { values = [0, 1], start = 0 }
 [playbooks.sampler]
-strategy = "grid"
+strategy = "block_coordinate"
+max_samples = 2
+blocks = [["x"]]
 [playbooks.sampler.sample_trial.dataset]
 adapter = "table_detection"
 path = "@comp/data.json"
@@ -173,7 +175,9 @@ direction = "maximize"
         report = json.loads(component.report.path.read_text(encoding='utf-8'))
         parent = report['job_trial']['playbook_trials'][0]
         self.assertEqual(parent['param_space_mode'], 'sampler')
+        self.assertEqual(parent['sampler']['blocks'], [['x']])
         self.assertIn('ParamSpace mode: `sampler`', component.report.main_path.read_text(encoding='utf-8'))
+        self.assertIn('"blocks": [', component.report.main_path.read_text(encoding='utf-8'))
         self.assertEqual(len(captured), 4)
         self.assertTrue(all(set(p['dataset_input']) == {'workbook_path', 'worksheet_name'} for p in captured))
         self.assertNotIn('ground_truth', json.dumps(captured))
@@ -252,7 +256,7 @@ direction = "maximize"
 
 class AdaptiveTests(unittest.TestCase):
     def test_coordinate_follows_improving_anchor_and_direction(self):
-        for strategy, extra in [('coordinate', {}), ('block_coordinate', {'block_size': 1})]:
+        for strategy, extra in [('coordinate', {}), ('block_coordinate', {'blocks': [['x'], ['y']]})]:
             for direction, sign in [('maximize', 1), ('minimize', -1)]:
                 with self.subTest(strategy=strategy, direction=direction):
                     space = ParamSpace.from_params({key: {'values': [0, 1], 'start': 0} for key in ('x', 'y')})
@@ -260,6 +264,24 @@ class AdaptiveTests(unittest.TestCase):
                     result = run_playbook_trial(sampler=sampler, dataset=[None], run=lambda s, i: None,
                         evaluator=lambda s, r: {'score': sign*(2*s.values['x']+s.values['y'])}, metric='score', direction=direction)
                     self.assertEqual(result.best('score', direction).sample.values, {'x': 1, 'y': 1})
+
+    def test_block_coordinate_can_improve_jointly_with_unlisted_singletons(self):
+        space = ParamSpace.from_params({
+            'x': {'values': [0, 1], 'start': 0},
+            'y': {'values': [0, 1], 'start': 0},
+            'z': {'values': [0, 1], 'start': 0},
+        })
+        sampler = ParamSampler(
+            space, 'block_coordinate', max_samples=6,
+            blocks=[['x', 'y']], objective_metric='score', direction='maximize',
+        )
+        result = run_playbook_trial(
+            sampler=sampler, dataset=[None], run=lambda sample, item: None,
+            evaluator=lambda sample, runs: {
+                'score': 10 * (sample.values['x'] == sample.values['y'] == 1) + sample.values['z']
+            }, metric='score', direction='maximize',
+        )
+        self.assertEqual(result.best('score', 'maximize').sample.values, {'x': 1, 'y': 1, 'z': 1})
 
     def test_invalid_objective_is_failed_observation_and_run_failure_retained(self):
         sampler = ParamSampler(ParamSpace.from_params({'x': {'values': [0, 1], 'start': 0}}))

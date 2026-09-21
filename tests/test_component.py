@@ -705,6 +705,19 @@ class ComponentConventionTests(unittest.TestCase):
         self.assertIn('# param_space_mode = "sampler"', text)
         self.assertIn('# __include__ = { ref = "component.params.model" }', text)
         self.assertIn("# [playbooks.sampler]", text)
+        self.assertIn('# blocks = [["temperature", "seed"]]', text)
+
+    def test_architecture_spec_links_normative_contracts(self) -> None:
+        text = (PROJECT_ROOT / "zemi" / "docs" / "ZEMI_ARCHITECTURE.md").read_text(encoding="utf-8")
+        for contract in (
+            "ZEMI Instance → System → Component → Playbook",
+            "JobTrial → PlaybookTrial → SampleTrial → PlaybookRun",
+            "ZEMI_PARAMS_0.3.md",
+            "DATASET_OPTIMIZATION.md",
+            "ARSENAL_ENDPOINTS.md",
+            "@inst/_secrets/arsenal.env",
+        ):
+            self.assertIn(contract, text)
 
     def test_job_is_declarative_and_component_owns_lifecycle(self) -> None:
         source = (PROJECT_ROOT / "job.exp.py").read_text(encoding="utf-8")

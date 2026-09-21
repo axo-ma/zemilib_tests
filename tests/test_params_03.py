@@ -106,6 +106,32 @@ class SchemaTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     validate_document(source)
 
+    def test_block_coordinate_schema_validates_explicit_blocks(self) -> None:
+        cases = (
+            ({}, "must be a non-empty array of parameter-name arrays"),
+            ({"blocks": []}, "must be a non-empty array of parameter-name arrays"),
+            ({"blocks": [[]]}, "must be a non-empty array of parameter names"),
+            ({"blocks": [["temperature"], ["temperature"]]}, "occurs in more than one block"),
+            ({"block_size": 2, "blocks": [["temperature"]]}, "unsupported structural keys: block_size"),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes):
+                source = document()
+                source["playbooks"][0]["params"]["fixed"] = 1
+                source["playbooks"][0]["param_space_mode"] = "sampler"
+                config = sampler_config()
+                config.update(strategy="block_coordinate", max_samples=10, **changes)
+                source["playbooks"][0]["sampler"] = config
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_document(source)
+
+        source = document()
+        source["playbooks"][0]["param_space_mode"] = "sampler"
+        config = sampler_config(); config["blocks"] = [["temperature"]]
+        source["playbooks"][0]["sampler"] = config
+        with self.assertRaisesRegex(ValueError, "blocks is valid only for block_coordinate"):
+            validate_document(source)
+
 
 class ParamSpaceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -125,12 +151,43 @@ class ParamSpaceTests(unittest.TestCase):
         for strategy, options in (
             ("grid", {}), ("random", {"max_samples": 4, "seed": 7}),
             ("coordinate", {"max_samples": 4}),
-            ("block_coordinate", {"max_samples": 4, "block_size": 2}),
+            ("block_coordinate", {"max_samples": 4, "blocks": [["temperature", "seed"]]}),
         ):
             with self.subTest(strategy=strategy):
                 sampler = ParamSampler(self.space, strategy, **options)
                 self.assertEqual(sampler.candidates[0], self.space.start)
                 self.assertEqual(len({sample.key() for sample in sampler.candidates}), len(sampler.candidates))
+
+    def test_block_coordinate_uses_named_cartesian_blocks_and_singletons(self) -> None:
+        space = ParamSpace.from_params({
+            "fixed": "value",
+            "x": {"values": [0, 1], "start": 0},
+            "y": {"values": [0, 1], "start": 0},
+            "z": {"values": [0, 1], "start": 0},
+        })
+        sampler = ParamSampler(
+            space, "block_coordinate", max_samples=10, blocks=[["x", "y"]]
+        )
+        self.assertEqual(
+            tuple(tuple(dimension.name for dimension in block) for block in sampler.blocks),
+            (("x", "y"), ("z",)),
+        )
+        candidates = [sample.values for sample in sampler.candidates]
+        self.assertIn({"fixed": "value", "x": 1, "y": 1, "z": 0}, candidates)
+        self.assertIn({"fixed": "value", "x": 0, "y": 0, "z": 1}, candidates)
+        self.assertNotIn({"fixed": "value", "x": 1, "y": 1, "z": 1}, candidates)
+
+    def test_block_coordinate_rejects_fixed_and_unknown_members(self) -> None:
+        space = ParamSpace.from_params({
+            "fixed": 1,
+            "x": {"values": [0, 1], "start": 0},
+        })
+        for blocks, message in (
+            ([["fixed"]], "is a fixed parameter"),
+            ([["missing"]], "unknown variable dimension"),
+        ):
+            with self.subTest(blocks=blocks), self.assertRaisesRegex(ValueError, message):
+                ParamSampler(space, "block_coordinate", max_samples=3, blocks=blocks)
 
     def test_evaluator_observes_complete_sample_trial(self) -> None:
         events = []
@@ -272,6 +329,41 @@ temperature = { values = [0.0, 0.2], start = 0.2 }
             ValueError, 'param_space_mode = "sampler" requires playbooks.one.sampler'
         ):
             ZemiComponent()
+
+    def test_block_names_are_validated_after_reference_resolution(self) -> None:
+        content = '''
+[system]
+version = "0.3"
+[component]
+[component.params.search]
+temperature = { values = [0.0, 0.2], start = 0.0 }
+[[arsenals]]
+id = "local"
+lifecycle = "external"
+[[playbooks]]
+id = "one"
+path = "one.ipynb"
+arsenal = "local"
+param_space_mode = "sampler"
+[playbooks.params]
+temperature = { ref = "component.params.search.temperature" }
+[playbooks.sampler]
+strategy = "block_coordinate"
+max_samples = 2
+blocks = [["temperature"]]
+[playbooks.sampler.sample_trial.dataset]
+adapter = "jsonl"
+path = "@comp/data.jsonl"
+[playbooks.sampler.sample_trial.evaluator]
+adapter = "@comp/evaluate.py:evaluate"
+[playbooks.sampler.sample_trial.objective]
+metric = "score"
+direction = "maximize"
+'''
+        (self.root / "params" / "default_params.toml").write_text(content, encoding="utf-8")
+        component = ZemiComponent()
+        self.assertEqual(component.playbooks[0].sampler_config["blocks"], [["temperature"]])
+        component.close()
 
 
 if __name__ == "__main__":
