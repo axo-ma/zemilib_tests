@@ -22,17 +22,18 @@ def optimizer_config(strategy="grid"):
         },
     }
     if strategy != "grid":
-        result["max_samples"] = 4
+        result["max_trials"] = 4
     return result
 
 
 def document():
     return {
-        "system": {"version": "0.5", "params": {}},
+        "system": {"version": "0.6", "params": {}},
         "component": {"name": "demo", "params": {}},
         "arsenals": [{"id": "local", "lifecycle": "external", "params": {}}],
-        "playbooks": [{
+        "modules": [{
             "id": "one",
+            "kind": "playbook",
             "path": "@comp/one.ipynb",
             "arsenal": "local",
             "params": {"temperature": {"values": [0.0, 0.2], "start": 0.2}},
@@ -41,41 +42,59 @@ def document():
     }
 
 
-class SchemaTests(unittest.TestCase):
+class Params06SchemaTests(unittest.TestCase):
+    def test_05_playbooks_migrate_to_06_modules_with_warning(self):
+        source = document()
+        source["system"]["version"] = "0.5"
+        source["playbooks"] = source.pop("modules")
+        source["playbooks"][0].pop("kind")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            migrated = validate_document(source)
+        self.assertEqual(migrated["system"]["version"], "0.6")
+        self.assertEqual(migrated["modules"][0]["kind"], "playbook")
+        self.assertTrue(any("[[playbooks]]" in str(item.message) for item in caught))
+
+    def test_only_implemented_module_kind_is_accepted(self):
+        source = document()
+        source["modules"][0]["kind"] = "python_script"
+        with self.assertRaisesRegex(ValueError, "only 'playbook' is supported"):
+            validate_document(source)
+
     def test_complete_document_is_valid_and_copied(self):
         source = document()
         validated = validate_document(source)
-        self.assertEqual(validated["system"]["version"], "0.5")
-        self.assertEqual(validated["playbooks"][0]["optimizer"]["strategy"], "grid")
+        self.assertEqual(validated["system"]["version"], "0.6")
+        self.assertEqual(validated["modules"][0]["optimizer"]["strategy"], "grid")
         self.assertEqual(source, document())
 
     def test_variable_parameters_require_optimizer_and_sample_trial(self):
         source = document()
-        del source["playbooks"][0]["optimizer"]
+        del source["modules"][0]["optimizer"]
         with self.assertRaisesRegex(ValueError, "optimizer is required.*temperature"):
             validate_document(source)
         source = document()
-        del source["playbooks"][0]["optimizer"]["sample_trial"]
+        del source["modules"][0]["optimizer"]["sample_trial"]
         with self.assertRaisesRegex(ValueError, "optimizer.sample_trial is required"):
             validate_document(source)
 
     def test_fixed_parameters_forbid_optimizer(self):
         source = document()
-        source["playbooks"][0]["params"] = {"temperature": 0.2}
+        source["modules"][0]["params"] = {"temperature": 0.2}
         with self.assertRaisesRegex(ValueError, "optimizer is not allowed.*all fixed"):
             validate_document(source)
-        del source["playbooks"][0]["optimizer"]
-        self.assertNotIn("optimizer", validate_document(source)["playbooks"][0])
+        del source["modules"][0]["optimizer"]
+        self.assertNotIn("optimizer", validate_document(source)["modules"][0])
 
     def test_removed_structural_keys_are_rejected(self):
         for key, value in (("param_space_mode", "sampler"), ("sampler", {"strategy": "grid"})):
             with self.subTest(key=key):
                 source = document()
-                source["playbooks"][0][key] = value
+                source["modules"][0][key] = value
                 with self.assertRaisesRegex(ValueError, "unsupported structural keys"):
                     validate_document(source)
         source = document()
-        source["playbooks"][0]["optimizer"]["objective"] = {"metric": "f1", "direction": "maximize"}
+        source["modules"][0]["optimizer"]["objective"] = {"metric": "f1", "direction": "maximize"}
         with self.assertRaisesRegex(ValueError, "unsupported structural keys"):
             validate_document(source)
 
@@ -87,21 +106,23 @@ class SchemaTests(unittest.TestCase):
         ):
             with self.subTest(trial=trial):
                 source = document()
-                source["playbooks"][0]["optimizer"]["sample_trial"] = trial
+                source["modules"][0]["optimizer"]["sample_trial"] = trial
                 with self.assertRaisesRegex(ValueError, message):
                     validate_document(source)
 
     def test_block_coordinate_blocks_are_preserved_and_validated(self):
         source = document()
-        source["playbooks"][0]["optimizer"] = optimizer_config("block_coordinate")
-        source["playbooks"][0]["optimizer"]["blocks"] = [["temperature"]]
+        source["modules"][0]["optimizer"] = optimizer_config("block_coordinate")
+        source["modules"][0]["optimizer"]["blocks"] = [["temperature"]]
         validated = validate_document(source)
-        self.assertEqual(validated["playbooks"][0]["optimizer"]["blocks"], [["temperature"]])
+        self.assertEqual(validated["modules"][0]["optimizer"]["blocks"], [["temperature"]])
 
     def test_03_migrates_with_warning_but_is_not_canonical(self):
         source = document()
         source["system"]["version"] = "0.3"
+        source["playbooks"] = source.pop("modules")
         playbook = source["playbooks"][0]
+        playbook.pop("kind")
         playbook["param_space_mode"] = "sampler"
         playbook["sampler"] = playbook.pop("optimizer")
         trial = playbook["sampler"]["sample_trial"]
@@ -111,8 +132,8 @@ class SchemaTests(unittest.TestCase):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             migrated = validate_document(source)
-        self.assertEqual(migrated["system"]["version"], "0.5")
-        self.assertIn("optimizer", migrated["playbooks"][0])
+        self.assertEqual(migrated["system"]["version"], "0.6")
+        self.assertIn("optimizer", migrated["modules"][0])
         self.assertTrue(any("deprecated" in str(item.message) for item in caught))
 
 

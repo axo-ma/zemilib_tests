@@ -703,28 +703,28 @@ class ComponentConventionTests(unittest.TestCase):
             params = tomllib.load(file)
         self.assertEqual(len(params["arsenals"]), 1)
         arsenal = params["arsenals"][0]
-        self.assertEqual(params["system"]["version"], "0.5")
+        self.assertEqual(params["system"]["version"], "0.6")
         self.assertEqual(arsenal["id"], "local-models")
         self.assertEqual(arsenal["lifecycle"], "job")
         self.assertEqual(arsenal["config_path"], "@comp/zemi/llm_curated_set_model_mode.toml")
-        self.assertEqual(len(params["playbooks"]), 3)
+        self.assertEqual(len(params["modules"]), 3)
         self.assertFalse(any(
             isinstance(value, dict) and ("values" in value or "range" in value)
-            for value in params["playbooks"][0]["params"].values()
+            for value in params["modules"][0]["params"].values()
         ))
         self.assertIn("# temperature = { values =", text)
         self.assertIn("# seed = { range =", text)
         self.assertNotIn('param_space_mode', text)
         self.assertIn('# __include__ = { ref = "component.params.model" }', text)
-        self.assertIn("# [playbooks.optimizer]", text)
+        self.assertIn("# [modules.optimizer]", text)
         self.assertIn('# blocks = [["temperature", "seed"]]', text)
 
     def test_architecture_spec_links_normative_contracts(self) -> None:
         text = (PROJECT_ROOT / "zemi" / "docs" / "ZEMI_ARCHITECTURE.md").read_text(encoding="utf-8")
         for contract in (
-            "ZEMI Instance → System → Component → Playbook",
-            "JobTrial → PlaybookTrial → SampleTrial → PlaybookRun",
-            "ZEMI_PARAMS_0.5.md",
+            "ZEMI Instance → System → Component → Module",
+            "JobTrial → ModuleTrial → SampleTrial → ModuleRun",
+            "ZEMI_PARAMS_0.6.md",
             "DATASET_OPTIMIZATION.md",
             "ARSENAL_ENDPOINTS.md",
             "@inst/_inputs/values.env",

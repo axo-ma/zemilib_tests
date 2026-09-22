@@ -1,5 +1,5 @@
 [system]
-version = "0.5"
+version = "0.6"
 
 [system.params]
 
@@ -15,31 +15,34 @@ lifecycle = "job"
 
 [arsenals.params]
 
-[[playbooks]]
+[[modules]]
 id = "default"
+kind = "playbook"
 path = "playbook.ipynb"
 arsenal = "local-models"
 enabled = true
 
-[playbooks.params]
+[modules.params]
 model_name = "lfm2_350m"
 
-[[playbooks]]
+[[modules]]
 id = "gbnf"
+kind = "playbook"
 path = "playbook_gbnf.ipynb"
 arsenal = "local-models"
 enabled = false
 
-[playbooks.params]
+[modules.params]
 model_name = "ling30_tiny"
 
-[[playbooks]]
+[[modules]]
 id = "guidance"
+kind = "playbook"
 path = "playbook_guidance.ipynb"
 arsenal = "local-models"
 enabled = false
 
-[playbooks.params]
+[modules.params]
 model_name = "qwen35_4b"
 
 # Explicit parameter reuse:
@@ -47,7 +50,7 @@ model_name = "qwen35_4b"
 # model_name = "lfm2_350m"
 # options = { top_k = 20, temperature = 0.2 }
 #
-# [playbooks.params]
+# [modules.params]
 # __include__ = { ref = "component.params.model" }
 # model_name = "local_override"
 
@@ -55,12 +58,13 @@ model_name = "qwen35_4b"
 # temperature = { values = [0.0, 0.2, 0.5, 0.8], start = 0.2 }
 # seed = { range = { min = 1, max = 5, step = 1 }, start = 1 }
 #
-# [playbooks.optimizer]
+# [modules.optimizer]
+# mode = "optimize"
 # strategy = "block_coordinate"
-# max_samples = 20
+# max_trials = 20
 # seed = 42
 # blocks = [["temperature", "seed"]]
 #
-# [playbooks.optimizer.sample_trial]
+# [modules.optimizer.sample_trial]
 # type = "@comp/sample_trials/default.py:DefaultSampleTrial"
 # dataset = "@comp/data/eval.jsonl"

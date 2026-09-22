@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from openpyxl import Workbook, load_workbook
 from zemi import env
-from zemi.component import ZemiComponent
+from zemi.component import Module, Playbook, ZemiComponent
 from zemi.dataset import RunContext, resolve_adapter, table_dataset, table_evaluator
 from zemi.params import ParamSpace, PlaybookOptimizer, SampleTrialResult, run_playbook_trial
 
@@ -24,7 +24,7 @@ class DatasetTests(unittest.TestCase):
         os.chdir(self.root)
         env.path.comp._runid = None
         book = Workbook()
-        book.active.title = 'Data'
+        book.active.title = 'Данные'
         book.active.append(['City', 'Amount'])
         book.active.append(['A', 10])
         book.create_sheet('Empty')
@@ -33,7 +33,7 @@ class DatasetTests(unittest.TestCase):
         Path('policy.md').write_text('Reviewed policy', encoding='utf-8')
         self.data = {'info': {'split': 'validation'}, 'annotation_policy': 'policy.md',
             'workbooks': [{'id': 'b', 'path': 'book.xlsx', 'sha256': hashlib.sha256(Path('book.xlsx').read_bytes()).hexdigest()}],
-            'worksheets': [{'id': 's', 'workbook_id': 'b', 'name': 'Data', 'status': 'reviewed', 'tags': ['header']},
+            'worksheets': [{'id': 's', 'workbook_id': 'b', 'name': 'Данные', 'status': 'reviewed', 'tags': ['header']},
                            {'id': 'e', 'workbook_id': 'b', 'name': 'Empty', 'status': 'reviewed', 'tags': ['empty']}],
             'annotations': [{'id': 'a', 'workbook_id': 'b', 'worksheet_id': 's', 'range': 'A1:B2', 'status': 'reviewed'}]}
         self.write()
@@ -53,8 +53,8 @@ class DatasetTests(unittest.TestCase):
         with patch('openpyxl.load_workbook', wraps=load_workbook) as load:
             items = self.load()
         self.assertEqual(load.call_count, 1)
-        self.assertEqual(items[0]['ground_truth'], ['A1:B2'])
-        self.assertEqual(items[1]['ground_truth'], [])
+        self.assertEqual(items[0]['reference'], ['A1:B2'])
+        self.assertEqual(items[1]['reference'], [])
         json.dumps(items)
         self.assertEqual(set(items[0]['input']), {'workbook_path', 'worksheet_name'})
 
@@ -115,23 +115,25 @@ class DatasetTests(unittest.TestCase):
         Path('params').mkdir()
         Path('params/test.toml').write_text('''
 [system]
-version = "0.5"
+version = "0.6"
 [component]
 [[arsenals]]
 id = "local"
 config_path = "@comp/arsenal.toml"
 lifecycle = "job"
-[[playbooks]]
+[[modules]]
 id = "detect"
+kind = "playbook"
 path = "one.ipynb"
 arsenal = "local"
-[playbooks.params]
+[modules.params]
 x = { values = [0, 1], start = 0 }
-[playbooks.optimizer]
+[modules.optimizer]
+mode = "optimize"
 strategy = "block_coordinate"
-max_samples = 2
+max_trials = 2
 blocks = [["x"]]
-[playbooks.optimizer.sample_trial]
+[modules.optimizer.sample_trial]
 type = "@comp/zemi/sample_trial.py:TableDetectionSampleTrial"
 dataset = "@comp/data.json"
 ''', encoding='utf-8')
@@ -155,11 +157,11 @@ dataset = "@comp/data.json"
             captured.append(copy.deepcopy(playbook.params))
             entry = component.report.start_trial(playbook)
             name = playbook.params['dataset_input']['worksheet_name']
-            if playbook.params['x'] == 0 and name == 'Data':
+            if playbook.params['x'] == 0 and name == 'Данные':
                 error = RuntimeError('model unavailable')
                 component.report.fail_playbook(entry, error)
                 raise error
-            entry['output_params'] = {'ranges': ['A1:B2'] if name == 'Data' else []}
+            entry['output_params'] = {'ranges': ['A1:B2'] if name == 'Данные' else []}
             component.report.finish_playbook(entry)
         with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin') as begin, patch('zemi.arsenal.end') as end, patch('zemi.component.Playbook.run', notebook):
             component.run()
@@ -173,7 +175,7 @@ dataset = "@comp/data.json"
         self.assertIn('"blocks": [', component.report.main_path.read_text(encoding='utf-8'))
         self.assertEqual(len(captured), 4)
         self.assertTrue(all(set(p['dataset_input']) == {'workbook_path', 'worksheet_name'} for p in captured))
-        self.assertNotIn('ground_truth', json.dumps(captured))
+        self.assertNotIn('reference', json.dumps(captured))
         self.assertEqual(len(parent['samples']), 2)
         self.assertTrue(all(len(s['runs']) == 2 for s in parent['samples']))
         self.assertEqual(parent['best_sample'], 'detect-sample-0002')
@@ -183,6 +185,11 @@ dataset = "@comp/data.json"
             content = (component.run_directory / filename).read_text(encoding='utf-8')
             self.assertIn('Ground truth', content)
             self.assertIn('model unavailable', content)
+            self.assertIn('Данные', content)
+            self.assertNotIn('\\u0414', content)
+        raw_report = component.report.path.read_text(encoding='utf-8')
+        self.assertIn('"worksheet_name": "Данные"', raw_report)
+        self.assertNotIn('\\u0414', raw_report)
 
     def test_real_papermill_dataset_smoke_without_model(self):
         import nbformat
@@ -228,7 +235,7 @@ dataset = "@comp/data.json"
         replay = ZemiComponent.from_best_report('@comp/params/test.toml', report_path)
         try:
             self.assertEqual(replay.playbooks[0].params['x'], 1)
-            self.assertEqual(replay.playbooks[0].optimizer_config['max_samples'], 1)
+            self.assertEqual(replay.modules[0].optimizer_config['max_trials'], 1)
         finally:
             replay.close()
 
@@ -239,31 +246,35 @@ from zemi.sample_trial import SampleTrial
 
 class CustomTrial(SampleTrial):
     def load_dataset(self):
-        return [{"id": "only", "input": {"value": 1}}]
+        return [{"id": "only", "input": {"value": 1}, "reference": {"expected": 1}}]
 
-    def evaluate(self, *, runs):
+    def evaluate(self, *, runs, dataset):
+        assert dataset[0]["reference"] == {"expected": 1}
         quality = runs[0]["prediction"]["quality"]
         return {"quality": quality, "diagnostic_count": len(runs)}, quality, {"kind": "custom"}
 
-    def render_report(self, history, optimizer_config, best_sample):
+    def render_report(self, history, best_param_sample):
         return "### Custom SampleTrial report\\n\\nDomain-owned content."
 ''', encoding='utf-8')
         Path('params').mkdir(exist_ok=True)
         Path('params/custom.toml').write_text('''
 [system]
-version = "0.5"
+version = "0.6"
 [component]
-[[playbooks]]
+[[modules]]
 id = "custom"
+kind = "playbook"
 path = "one.ipynb"
-[playbooks.params]
+[modules.params]
 x = { values = [0, 1], start = 0 }
-[playbooks.optimizer]
+[modules.optimizer]
+mode = "optimize"
 strategy = "grid"
-[playbooks.optimizer.sample_trial]
+[modules.optimizer.sample_trial]
 type = "@comp/custom_trial.py:CustomTrial"
 dataset = "@comp/data.json"
 ''', encoding='utf-8')
+        Path('data.json').write_text(json.dumps([{"id": "only", "input": {"value": 1}, "reference": {"expected": 1}}]), encoding='utf-8')
         component = ZemiComponent('@comp/params/custom.toml')
         def notebook(playbook):
             entry = component.report.start_trial(playbook)
@@ -281,6 +292,40 @@ dataset = "@comp/data.json"
         detailed = component.run_directory / parent['report_markdown']
         self.assertTrue(detailed.is_file())
         self.assertIn('Domain-owned content', detailed.read_text(encoding='utf-8'))
+
+    def test_component_module_hierarchy_and_start_only_unicode(self):
+        component = self.component()
+        self.assertEqual(component.modules, component.playbooks)
+        self.assertIsInstance(component.modules[0], Module)
+        self.assertIsInstance(component.modules[0], Playbook)
+        self.assertEqual(component.modules[0].kind, 'playbook')
+        component.close()
+
+    def test_start_only_via_select_runs_one_full_sample_trial(self):
+        initial = self.component()
+        initial.close()
+        env.path.comp._runid = None
+        config_path = Path('params/test.toml')
+        text = config_path.read_text(encoding='utf-8').replace(
+            'mode = "optimize"', 'mode = { select = ["optimize", "start_only"] }'
+        )
+        config_path.write_text(text, encoding='utf-8')
+        with patch('builtins.input', return_value='2'):
+            component = ZemiComponent('@comp/params/test.toml')
+
+        def notebook(playbook):
+            entry = component.report.start_trial(playbook)
+            entry['output_params'] = {'ranges': []}
+            component.report.finish_playbook(entry)
+
+        with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin'), patch('zemi.arsenal.end'), patch('zemi.component.Playbook.run', notebook):
+            component.run()
+        component.close()
+        trial = component.report.data['job_trial']['playbook_trials'][0]
+        self.assertEqual(trial['optimizer']['mode'], 'start_only')
+        self.assertEqual(len(trial['samples']), 1)
+        self.assertEqual(len(trial['samples'][0]['runs']), 2)
+        self.assertEqual(trial['best_params'], {'x': 0})
 
     def test_best_report_must_resolve_a_successful_sample(self):
         self.component().close()
