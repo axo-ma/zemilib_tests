@@ -10,8 +10,8 @@ from unittest.mock import patch
 from openpyxl import Workbook, load_workbook
 from zemi import env
 from zemi.component import Module, Playbook, ZemiComponent
-from zemi.dataset import RunContext, resolve_adapter, table_dataset, table_evaluator
-from zemi.params import ParamSpace, PlaybookOptimizer, SampleTrialResult, run_playbook_trial
+from zemi.dataset import RunContext, TrialDataset, resolve_adapter, table_dataset, table_evaluator
+from zemi.params import ModuleOptimizer, ParamSpace, PlaybookOptimizer, SampleTrialResult, run_playbook_trial
 
 
 class DatasetTests(unittest.TestCase):
@@ -30,12 +30,10 @@ class DatasetTests(unittest.TestCase):
         book.create_sheet('Empty')
         book.save('book.xlsx')
         book.close()
-        Path('policy.md').write_text('Reviewed policy', encoding='utf-8')
-        self.data = {'info': {'split': 'validation'}, 'annotation_policy': 'policy.md',
-            'workbooks': [{'id': 'b', 'path': 'book.xlsx', 'sha256': hashlib.sha256(Path('book.xlsx').read_bytes()).hexdigest()}],
-            'worksheets': [{'id': 's', 'workbook_id': 'b', 'name': 'Данные', 'status': 'reviewed', 'tags': ['header']},
-                           {'id': 'e', 'workbook_id': 'b', 'name': 'Empty', 'status': 'reviewed', 'tags': ['empty']}],
-            'annotations': [{'id': 'a', 'workbook_id': 'b', 'worksheet_id': 's', 'range': 'A1:B2', 'status': 'reviewed'}]}
+        self.data = {'items': [
+            {'id': 's', 'description': 'Заголовок', 'input': {'workbook_path': '@comp/book.xlsx', 'worksheet_name': 'Данные'}, 'ground_truth': ['A1:B2'], 'tags': ['header']},
+            {'id': 'e', 'input': {'workbook_path': '@comp/book.xlsx', 'worksheet_name': 'Empty'}, 'ground_truth': [], 'tags': ['empty']},
+        ]}
         self.write()
 
     def tearDown(self):
@@ -44,38 +42,33 @@ class DatasetTests(unittest.TestCase):
         shutil.rmtree(self.root)
 
     def write(self):
-        Path('data.json').write_text(json.dumps(self.data), encoding='utf-8')
+        Path('data.json').write_text(json.dumps(self.data, ensure_ascii=False), encoding='utf-8')
 
     def load(self):
         return table_dataset(path='@comp/data.json', params={})
 
     def test_light_items_and_single_book_preflight(self):
-        with patch('openpyxl.load_workbook', wraps=load_workbook) as load:
-            items = self.load()
-        self.assertEqual(load.call_count, 1)
-        self.assertEqual(items[0]['reference'], ['A1:B2'])
-        self.assertEqual(items[1]['reference'], [])
+        items = self.load()
+        self.assertEqual(items[0]['ground_truth'], ['A1:B2'])
+        self.assertEqual(items[1]['ground_truth'], [])
         json.dumps(items)
         self.assertEqual(set(items[0]['input']), {'workbook_path', 'worksheet_name'})
 
     def test_rejects_all_invalid_contracts(self):
         original = copy.deepcopy(self.data)
-        changes = [
-            ('worksheets', 0, 'status', 'draft'), ('worksheets', 1, 'status', 'blocked'),
-            ('worksheets', 0, 'name', 'Missing'), ('worksheets', 0, 'workbook_id', 'absent'),
-            ('worksheets', 1, 'id', 's'), ('annotations', 0, 'worksheet_id', 'absent'),
-            ('annotations', 0, 'workbook_id', 'absent'), ('annotations', 0, 'range', 'B2:A1'),
-            ('annotations', 0, 'status', 'draft'), ('workbooks', 0, 'path', 'missing.xlsx'),
-            ('workbooks', 0, 'path', 'C:/unsafe.xlsx'), ('workbooks', 0, 'path', '../../../../outside.xlsx'),
-            ('workbooks', 0, 'sha256', '0'*64),
-        ]
-        for section, index, key, value in changes:
-            with self.subTest(section=section, key=key, value=value):
-                self.data = copy.deepcopy(original)
-                self.data[section][index][key] = value
+        changes = [('id', ''), ('ground_truth', ['B2:A1']), ('tags', 'bad')]
+        for key, value in changes:
+            with self.subTest(key=key, value=value):
+                self.data = copy.deepcopy(original); self.data['items'][0][key] = value
                 self.write()
                 with self.assertRaises((ValueError, FileNotFoundError)):
                     self.load()
+
+    def test_flat_dataset_unicode_round_trip(self):
+        dataset = TrialDataset.load('@comp/data.json')
+        self.assertEqual(dataset.items, self.data['items'])
+        self.assertIn('Данные', Path('data.json').read_text(encoding='utf-8'))
+        self.assertNotIn('\\u0414', Path('data.json').read_text(encoding='utf-8'))
 
     def test_exact_one_to_one_micro_metrics_errors_and_negatives(self):
         items = self.load()
@@ -141,10 +134,10 @@ dataset = "@comp/data.json"
 
     def test_component_failfast_before_arsenal_and_notebook(self):
         component = self.component()
-        self.data['worksheets'][1]['status'] = 'draft'
+        self.data['items'][1]['ground_truth'] = ['bad']
         self.write()
         with patch('zemi.arsenal.begin') as begin, patch('zemi.component.Playbook.run') as run:
-            with self.assertRaisesRegex(ValueError, 'worksheets\\[e\\].status'):
+            with self.assertRaisesRegex(ValueError, 'Invalid exact range'):
                 component.run()
             begin.assert_not_called()
             run.assert_not_called()
@@ -181,12 +174,17 @@ dataset = "@comp/data.json"
         self.assertEqual(parent['best_sample'], 'detect-sample-0002')
         self.assertEqual(parent['samples'][0]['metrics']['fn'], 1)
         self.assertEqual(parent['samples'][1]['metrics']['f1'], 1)
-        for filename in ('main.md', 'report.md'):
-            content = (component.run_directory / filename).read_text(encoding='utf-8')
-            self.assertIn('Ground truth', content)
-            self.assertIn('model unavailable', content)
-            self.assertIn('Данные', content)
-            self.assertNotIn('\\u0414', content)
+        sample_report = component.run_directory / parent['samples'][0]['report']
+        dataset_report = component.run_directory / parent['dataset_report']
+        progress_report = component.run_directory / parent['optimization_report']
+        for target in (sample_report, dataset_report, progress_report):
+            self.assertTrue(target.is_file())
+        self.assertIn('Ground truth', sample_report.read_text(encoding='utf-8'))
+        self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
+        self.assertIn('Данные', sample_report.read_text(encoding='utf-8'))
+        self.assertIn('| # | Param Sample | Score | Precision | Recall | F1 | Report |', progress_report.read_text(encoding='utf-8'))
+        self.assertIn('[Best]', progress_report.read_text(encoding='utf-8'))
+        self.assertIn('Executed', dataset_report.read_text(encoding='utf-8'))
         raw_report = component.report.path.read_text(encoding='utf-8')
         self.assertIn('"worksheet_name": "Данные"', raw_report)
         self.assertNotIn('\\u0414', raw_report)
@@ -246,14 +244,14 @@ from zemi.sample_trial import SampleTrial
 
 class CustomTrial(SampleTrial):
     def load_dataset(self):
-        return [{"id": "only", "input": {"value": 1}, "reference": {"expected": 1}}]
+        return super().load_dataset()
 
     def evaluate(self, *, runs, dataset):
-        assert dataset[0]["reference"] == {"expected": 1}
+        assert dataset.items[0]["ground_truth"] == []
         quality = runs[0]["prediction"]["quality"]
         return {"quality": quality, "diagnostic_count": len(runs)}, quality, {"kind": "custom"}
 
-    def render_report(self, history, best_param_sample):
+    def render_report(self, **kwargs):
         return "### Custom SampleTrial report\\n\\nDomain-owned content."
 ''', encoding='utf-8')
         Path('params').mkdir(exist_ok=True)
@@ -274,7 +272,7 @@ strategy = "grid"
 type = "@comp/custom_trial.py:CustomTrial"
 dataset = "@comp/data.json"
 ''', encoding='utf-8')
-        Path('data.json').write_text(json.dumps([{"id": "only", "input": {"value": 1}, "reference": {"expected": 1}}]), encoding='utf-8')
+        Path('data.json').write_text(json.dumps({"items": [{"id": "only", "input": {"value": 1}, "ground_truth": []}]}), encoding='utf-8')
         component = ZemiComponent('@comp/params/custom.toml')
         def notebook(playbook):
             entry = component.report.start_trial(playbook)
@@ -288,8 +286,7 @@ dataset = "@comp/data.json"
         self.assertEqual(parent['samples'][1]['metrics'], {'quality': 1.0, 'diagnostic_count': 1.0})
         self.assertEqual(parent['samples'][1]['feedback'], {'kind': 'custom'})
         self.assertEqual(parent['best_params'], {'x': 1})
-        self.assertIn('Custom SampleTrial report', component.report.main_path.read_text(encoding='utf-8'))
-        detailed = component.run_directory / parent['report_markdown']
+        detailed = component.run_directory / parent['samples'][1]['report']
         self.assertTrue(detailed.is_file())
         self.assertIn('Domain-owned content', detailed.read_text(encoding='utf-8'))
 
@@ -343,6 +340,17 @@ dataset = "@comp/data.json"
 
 
 class AdaptiveTests(unittest.TestCase):
+    def test_optimizer_report_truncates_only_long_param_samples(self):
+        optimizer = ModuleOptimizer(config={'strategy': 'grid'}, param_space=ParamSpace(config={}))
+        short = SampleTrialResult(ParamSpace(config={'x': 1}).start, [], {'f1': 1}, score=1, report='short.md')
+        long = SampleTrialResult(ParamSpace(config={'first': 'x' * 50, 'second': 'y' * 50}).start, [], {'f1': .5}, score=.5, report='long.md')
+        report = optimizer.render_report(history=[short, long], best_param_sample=short.sample)
+        self.assertIn('x=1', report)
+        self.assertNotIn('x=1 / …', report)
+        self.assertIn(' / …', report)
+        self.assertIn('[Best](short.md)', report)
+        self.assertIn('[Details](long.md)', report)
+
     def test_optimizer_next_and_best_use_history_score(self):
         space = ParamSpace(config={'x': {'values': [0, 1], 'start': 0}})
         optimizer = PlaybookOptimizer(config={'strategy': 'grid'}, param_space=space)
