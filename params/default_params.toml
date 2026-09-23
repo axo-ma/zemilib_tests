@@ -18,7 +18,7 @@ lifecycle = "job"
 [[modules]]
 id = "default"
 kind = "playbook"
-path = "playbook.ipynb"
+path = "@comp/playbook.ipynb"
 arsenal = "local-models"
 enabled = true
 
@@ -28,7 +28,7 @@ model_name = "lfm2_350m"
 [[modules]]
 id = "gbnf"
 kind = "playbook"
-path = "playbook_gbnf.ipynb"
+path = "@comp/playbook_gbnf.ipynb"
 arsenal = "local-models"
 enabled = false
 
@@ -38,7 +38,7 @@ model_name = "ling30_tiny"
 [[modules]]
 id = "guidance"
 kind = "playbook"
-path = "playbook_guidance.ipynb"
+path = "@comp/playbook_guidance.ipynb"
 arsenal = "local-models"
 enabled = false
 
@@ -67,4 +67,6 @@ model_name = "qwen35_4b"
 #
 # [modules.optimizer.sample_trial]
 # type = "@comp/sample_trials/default.py:DefaultSampleTrial"
-# dataset = "@comp/data/eval.jsonl"
+#
+# [modules.optimizer.trial_dataset]
+# path = "@comp/data/eval.json"

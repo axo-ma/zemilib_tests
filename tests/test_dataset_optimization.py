@@ -128,7 +128,8 @@ max_trials = 2
 blocks = [["x"]]
 [modules.optimizer.sample_trial]
 type = "@comp/zemi/sample_trial.py:TableDetectionSampleTrial"
-dataset = "@comp/data.json"
+[modules.optimizer.trial_dataset]
+path = "@comp/data.json"
 ''', encoding='utf-8')
         return ZemiComponent('@comp/params/test.toml')
 
@@ -182,8 +183,9 @@ dataset = "@comp/data.json"
         self.assertIn('Ground truth', sample_report.read_text(encoding='utf-8'))
         self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
         self.assertIn('Данные', sample_report.read_text(encoding='utf-8'))
-        self.assertIn('| # | Param Sample | Score | Precision | Recall | F1 | Report |', progress_report.read_text(encoding='utf-8'))
-        self.assertIn('[Best]', progress_report.read_text(encoding='utf-8'))
+        progress = progress_report.read_text(encoding='utf-8')
+        self.assertIn('## Optimization: detect', progress)
+        self.assertIn('Best sample: `detect-sample-0002`', progress)
         self.assertIn('Executed', dataset_report.read_text(encoding='utf-8'))
         raw_report = component.report.path.read_text(encoding='utf-8')
         self.assertIn('"worksheet_name": "Данные"', raw_report)
@@ -243,9 +245,6 @@ dataset = "@comp/data.json"
 from zemi.sample_trial import SampleTrial
 
 class CustomTrial(SampleTrial):
-    def load_dataset(self):
-        return super().load_dataset()
-
     def evaluate(self, *, runs, dataset):
         assert dataset.items[0]["ground_truth"] == []
         quality = runs[0]["prediction"]["quality"]
@@ -270,7 +269,8 @@ mode = "optimize"
 strategy = "grid"
 [modules.optimizer.sample_trial]
 type = "@comp/custom_trial.py:CustomTrial"
-dataset = "@comp/data.json"
+[modules.optimizer.trial_dataset]
+path = "@comp/data.json"
 ''', encoding='utf-8')
         Path('data.json').write_text(json.dumps({"items": [{"id": "only", "input": {"value": 1}, "ground_truth": []}]}), encoding='utf-8')
         component = ZemiComponent('@comp/params/custom.toml')

@@ -17,9 +17,9 @@ def optimizer_config(strategy="grid"):
         "strategy": strategy,
         "sample_trial": {
             "type": "@comp/zemi/sample_trial.py:TableDetectionSampleTrial",
-            "dataset": "@comp/data/eval.json",
             "params": {},
         },
+        "trial_dataset": {"path": "@comp/data/eval.json"},
     }
     if strategy != "grid":
         result["max_trials"] = 4
@@ -48,11 +48,14 @@ class Params06SchemaTests(unittest.TestCase):
         source["system"]["version"] = "0.5"
         source["playbooks"] = source.pop("modules")
         source["playbooks"][0].pop("kind")
+        optimizer = source["playbooks"][0]["optimizer"]
+        optimizer["sample_trial"]["dataset"] = optimizer.pop("trial_dataset")["path"]
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             migrated = validate_document(source)
         self.assertEqual(migrated["system"]["version"], "0.6")
         self.assertEqual(migrated["modules"][0]["kind"], "playbook")
+        self.assertEqual(migrated["modules"][0]["optimizer"]["trial_dataset"]["path"], "@comp/data/eval.json")
         self.assertTrue(any("[[playbooks]]" in str(item.message) for item in caught))
 
     def test_only_implemented_module_kind_is_accepted(self):
@@ -98,17 +101,24 @@ class Params06SchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported structural keys"):
             validate_document(source)
 
-    def test_sample_trial_type_and_dataset_are_explicit(self):
+    def test_sample_trial_type_and_trial_dataset_path_are_explicit(self):
         for trial, message in (
-            ({"type": "table_detection", "dataset": "@comp/data/eval.json"}, "type must be"),
-            ({"type": "@comp/trial.py:Trial"}, "dataset must be"),
-            ({"type": "@comp/trial.py", "dataset": "@comp/data/eval.json"}, "type must be"),
+            ({"type": "table_detection"}, "type must be"),
+            ({"type": "@comp/trial.py"}, "type must be"),
         ):
             with self.subTest(trial=trial):
                 source = document()
                 source["modules"][0]["optimizer"]["sample_trial"] = trial
                 with self.assertRaisesRegex(ValueError, message):
                     validate_document(source)
+        source = document()
+        source["modules"][0]["optimizer"].pop("trial_dataset")
+        with self.assertRaisesRegex(ValueError, "optimizer.trial_dataset is required"):
+            validate_document(source)
+        source = document()
+        source["modules"][0]["optimizer"]["trial_dataset"] = {"path": ""}
+        with self.assertRaisesRegex(ValueError, "trial_dataset.path must be"):
+            validate_document(source)
 
     def test_block_coordinate_blocks_are_preserved_and_validated(self):
         source = document()
@@ -127,7 +137,7 @@ class Params06SchemaTests(unittest.TestCase):
         playbook["sampler"] = playbook.pop("optimizer")
         trial = playbook["sampler"]["sample_trial"]
         trial["implementation"] = "table_detection"
-        trial["path"] = trial.pop("dataset")
+        trial["path"] = playbook["sampler"].pop("trial_dataset")["path"]
         trial.pop("type")
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
