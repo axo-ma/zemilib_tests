@@ -149,6 +149,15 @@ enabled = false
         self.assertEqual(component.playbooks[0].params["model_name"], "experiment")
         component.close()
 
+    def test_explicit_params_file_inside_component_subdirectory(self) -> None:
+        nested = self.root / "experiment6" / "params"
+        nested.mkdir(parents=True)
+        target = nested / "01_models.toml"
+        target.write_text(self.default_content, encoding="utf-8")
+        component = ZemiComponent(params_file="@comp/experiment6/params/01_models.toml")
+        self.assertEqual(component.params_path, target.resolve())
+        component.close()
+
     def test_multiple_files_prompt_for_selection(self) -> None:
         self.write_alternative()
 
