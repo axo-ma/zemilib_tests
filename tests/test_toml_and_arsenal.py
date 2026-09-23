@@ -387,6 +387,14 @@ class LlmCuratedSetTests(unittest.TestCase):
             "Ling-3.0-tiny-GGUF",
             "Ling-3.0-tiny-Q4_K_M.gguf",
         ),
+        "granite42_8b": (
+            "granite-4.2-8b-GGUF",
+            "granite-4.2-8b-Q4_K_M.gguf",
+        ),
+        "gemma4_e4b": (
+            "google_gemma-4-E4B-it-GGUF",
+            "google_gemma-4-E4B-it-Q4_K_M.gguf",
+        ),
     }
 
     @classmethod
@@ -402,8 +410,8 @@ class LlmCuratedSetTests(unittest.TestCase):
         self.assertEqual(self.router.mode, "router")
         self.assertEqual(self.model_mode.mode, "model")
         self.assertEqual(len(self.router.llamas), 1)
-        self.assertEqual(len(self.router.llamas[0].models), 13)
-        self.assertEqual(len(self.model_mode.llamas), 13)
+        self.assertEqual(len(self.router.llamas[0].models), 15)
+        self.assertEqual(len(self.model_mode.llamas), 15)
         self.assertTrue(
             all(len(llama.models) == 1 for llama in self.model_mode.llamas)
         )
@@ -416,12 +424,12 @@ class LlmCuratedSetTests(unittest.TestCase):
 
         self.assertEqual(router_aliases, model_mode_aliases)
         for models in (router_models, model_mode_models):
-            self.assertEqual(len({model.name for model in models}), 13)
-            self.assertEqual(len({model.alias for model in models}), 13)
+            self.assertEqual(len({model.name for model in models}), 15)
+            self.assertEqual(len({model.alias for model in models}), 15)
 
         ports = [llama.port for llama in self.model_mode.llamas]
-        self.assertEqual(len(set(ports)), 13)
-        self.assertEqual(set(ports), set(range(8080, 8093)))
+        self.assertEqual(len(set(ports)), 15)
+        self.assertEqual(set(ports), set(range(8080, 8095)))
 
     def test_every_server_uses_curated_llama_build(self) -> None:
         for session in (self.router, self.model_mode):

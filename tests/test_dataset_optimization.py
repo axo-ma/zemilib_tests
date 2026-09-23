@@ -10,7 +10,7 @@ from unittest.mock import patch
 from openpyxl import Workbook, load_workbook
 from zemi import env
 from zemi.component import Module, Playbook, ZemiComponent
-from zemi.dataset import RunContext, TrialDataset, resolve_adapter, table_dataset, table_evaluator
+from zemi.dataset import RunContext, TableDetectionTrialDataset, TrialDataset, resolve_adapter, table_dataset, table_evaluator
 from zemi.params import ModuleOptimizer, ParamSpace, PlaybookOptimizer, SampleTrialResult, run_playbook_trial
 
 
@@ -69,6 +69,12 @@ class DatasetTests(unittest.TestCase):
         self.assertEqual(dataset.items, self.data['items'])
         self.assertIn('Данные', Path('data.json').read_text(encoding='utf-8'))
         self.assertNotIn('\\u0414', Path('data.json').read_text(encoding='utf-8'))
+
+    def test_configured_table_detection_dataset_loads_on_instance(self):
+        dataset = TableDetectionTrialDataset(config={'path': '@comp/data.json'})
+        self.assertEqual(dataset.items, [])
+        dataset.load()
+        self.assertEqual(dataset.items, self.data['items'])
 
     def test_exact_one_to_one_micro_metrics_errors_and_negatives(self):
         items = self.load()
@@ -184,8 +190,9 @@ path = "@comp/data.json"
         self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
         self.assertIn('Данные', sample_report.read_text(encoding='utf-8'))
         progress = progress_report.read_text(encoding='utf-8')
-        self.assertIn('## Optimization: detect', progress)
-        self.assertIn('Best sample: `detect-sample-0002`', progress)
+        self.assertIn(f'[Trial Dataset Report]({dataset_report.name})', progress)
+        self.assertIn('# Optimization Progress Report', progress)
+        self.assertIn('[Best](detect-sample-0002.md)', progress)
         self.assertIn('Executed', dataset_report.read_text(encoding='utf-8'))
         raw_report = component.report.path.read_text(encoding='utf-8')
         self.assertIn('"worksheet_name": "Данные"', raw_report)
@@ -215,7 +222,7 @@ path = "@comp/data.json"
         self.assertEqual(len(parent['samples']), 1)
         self.assertEqual(len(parent['samples'][0]['runs']), 2)
         self.assertEqual(parent['samples'][0]['metrics']['fn'], 1)
-        self.assertEqual(parent['samples'][0]['metrics']['correct_empty'], 1)
+        self.assertEqual(parent['samples'][0]['metrics']['correct_empty'], 1, parent['samples'][0]['runs'])
         for run in parent['samples'][0]['runs']:
             self.assertTrue((component.run_directory / run['artifacts']['output_notebook']).is_file())
             self.assertEqual(run['prediction'], {'ranges': []})
@@ -245,12 +252,12 @@ path = "@comp/data.json"
 from zemi.sample_trial import SampleTrial
 
 class CustomTrial(SampleTrial):
-    def evaluate(self, *, runs, dataset):
-        assert dataset.items[0]["ground_truth"] == []
+    def evaluate(self, runs):
+        assert self.dataset.items[0]["ground_truth"] == []
         quality = runs[0]["prediction"]["quality"]
         return {"quality": quality, "diagnostic_count": len(runs)}, quality, {"kind": "custom"}
 
-    def render_report(self, **kwargs):
+    def render_report(self, runs, metrics, score, feedback):
         return "### Custom SampleTrial report\\n\\nDomain-owned content."
 ''', encoding='utf-8')
         Path('params').mkdir(exist_ok=True)
