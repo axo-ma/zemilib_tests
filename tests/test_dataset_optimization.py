@@ -85,8 +85,8 @@ class DatasetTests(unittest.TestCase):
             {'item': items[1], 'prediction': {'ranges': ['nonsense']}},
         ], {})
         metrics, feedback = table_evaluator(trial, params={})
-        self.assertEqual((metrics['tp'], metrics['fp'], metrics['fn']), (1, 4, 1))
-        self.assertAlmostEqual(metrics['f1'], 2/7)
+        self.assertEqual((metrics['tp'], metrics['fp'], metrics['fn']), (1, 3, 1))
+        self.assertAlmostEqual(metrics['f1'], 1/3)
         self.assertEqual((metrics['errors'], metrics['reviewed_empty'], metrics['correct_empty']), (2, 2, 1))
         self.assertEqual(len(feedback['items']), 4)
         self.assertEqual(feedback['tags']['header']['fn'], 1)
@@ -181,19 +181,20 @@ path = "@comp/data.json"
         self.assertEqual(parent['best_sample'], 'detect-sample-0002')
         self.assertEqual(parent['samples'][0]['metrics']['fn'], 1)
         self.assertEqual(parent['samples'][1]['metrics']['f1'], 1)
+        self.assertIn('`optimize`', (component.run_directory / 'index.md').read_text(encoding='utf-8'))
         sample_report = component.run_directory / parent['samples'][0]['report']
         dataset_report = component.run_directory / parent['dataset_report']
-        progress_report = component.run_directory / parent['optimization_report']
+        progress_report = component.run_directory / component.reporting.writer.ref('module', 'detect').path
         for target in (sample_report, dataset_report, progress_report):
             self.assertTrue(target.is_file())
         self.assertIn('Ground truth', sample_report.read_text(encoding='utf-8'))
         self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
         self.assertIn('Данные', sample_report.read_text(encoding='utf-8'))
         progress = progress_report.read_text(encoding='utf-8')
-        self.assertIn(f'[Trial Dataset Report]({dataset_report.name})', progress)
-        self.assertIn('# Optimization Progress Report', progress)
-        self.assertIn('[Best](detect-sample-0002.md)', progress)
-        self.assertIn('Executed', dataset_report.read_text(encoding='utf-8'))
+        self.assertIn(f'({dataset_report.name})', progress)
+        self.assertIn('## Module Optimization Progress', progress)
+        self.assertIn('## Selected Sample', progress)
+        self.assertIn('Worksheets detected', dataset_report.read_text(encoding='utf-8'))
         raw_report = component.report.path.read_text(encoding='utf-8')
         self.assertIn('"worksheet_name": "Данные"', raw_report)
         self.assertNotIn('\\u0414', raw_report)
@@ -330,6 +331,9 @@ path = "@comp/data.json"
         self.assertEqual(len(trial['samples']), 1)
         self.assertEqual(len(trial['samples'][0]['runs']), 2)
         self.assertEqual(trial['best_params'], {'x': 0})
+        module_doc = (component.run_directory / component.reporting.writer.ref('module', 'detect').path).read_text(encoding='utf-8')
+        self.assertIn('No parameter search was performed.', module_doc)
+        self.assertIn('`start_only`', (component.run_directory / 'index.md').read_text(encoding='utf-8'))
 
     def test_best_report_must_resolve_a_successful_sample(self):
         self.component().close()
