@@ -1,9 +1,11 @@
 """Deterministic report routing, layout and evaluation checks."""
 import tempfile
 import unittest
+import os
 from pathlib import Path
+from unittest.mock import patch
 
-from zemi.reporting import DefaultReportRenderer, ReportWriter
+from zemi.reporting import DefaultReportRenderer, ReportWriter, _replace_report
 from zemi.dataset import table_evaluator
 from zemi import env
 
@@ -27,6 +29,47 @@ class ReportingTests(unittest.TestCase):
         self.assertNotIn("Old", doc)
         self.assertLess(doc.index("## Results"), doc.index("## Errors"))
         self.assertFalse((writer.root / f".{ref.path}.tmp").exists())
+
+    def test_unchanged_fragment_does_not_replace_file_again(self):
+        writer = self.writer
+        writer.register_module("m")
+        writer.write_module_header("m", "Header")
+        with patch("zemi.reporting.os.replace", wraps=os.replace) as replace:
+            writer.write_module_header("m", "Header")
+        replace.assert_not_called()
+
+    def test_transient_windows_lock_retries_atomic_replace(self):
+        target = Path(self.tmp.name) / "report.md"
+        tmp = Path(self.tmp.name) / ".report.md.tmp"
+        target.write_text("old", encoding="utf-8")
+        tmp.write_text("new", encoding="utf-8")
+        calls = 0
+        def transient(source, destination):
+            nonlocal calls
+            calls += 1
+            if calls <= 2:
+                error = PermissionError(13, "File is temporarily locked")
+                error.winerror = 5
+                raise error
+            os_replace(source, destination)
+        os_replace = os.replace
+        with patch("zemi.reporting.os.replace", side_effect=transient), patch("zemi.reporting.time.sleep"):
+            _replace_report(tmp, target)
+        self.assertEqual(calls, 3)
+        self.assertEqual(target.read_text(encoding="utf-8"), "new")
+        self.assertFalse(tmp.exists())
+
+    def test_persistent_windows_lock_keeps_previous_report_intact(self):
+        target = Path(self.tmp.name) / "report.md"
+        tmp = Path(self.tmp.name) / ".report.md.tmp"
+        target.write_text("old", encoding="utf-8")
+        tmp.write_text("new", encoding="utf-8")
+        error = PermissionError(13, "File is locked")
+        error.winerror = 32
+        with patch("zemi.reporting.os.replace", side_effect=error), patch("zemi.reporting.time.sleep"):
+            with self.assertRaises(PermissionError):
+                _replace_report(tmp, target)
+        self.assertEqual(target.read_text(encoding="utf-8"), "old")
 
     def test_safe_colliding_names_and_registered_relative_links(self):
         writer = self.writer
