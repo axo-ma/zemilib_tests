@@ -168,11 +168,16 @@ path = "@comp/data.json"
             begin.assert_called_once()
             end.assert_called_once()
         component.close()
+        for obsolete in ('main.md', 'report.md'):
+            self.assertFalse((component.run_directory / obsolete).exists())
+        self.assertFalse((component.run_directory / 'sample_trials').exists())
+        self.assertFalse(list((component.run_directory / 'notebooks').glob('*.report.md')))
         report = json.loads(component.report.path.read_text(encoding='utf-8'))
         parent = report['job_trial']['playbook_trials'][0]
         self.assertEqual(parent['optimizer']['blocks'], [['x']])
-        self.assertIn('## Optimization:', component.report.main_path.read_text(encoding='utf-8'))
-        self.assertIn('"blocks": [', component.report.main_path.read_text(encoding='utf-8'))
+        module_path = component.run_directory / component.reporting.writer.ref('module', 'detect').path
+        self.assertIn('## Module Optimization Progress', module_path.read_text(encoding='utf-8'))
+        self.assertIn('[["x"]]', module_path.read_text(encoding='utf-8'))
         self.assertEqual(len(captured), 4)
         self.assertTrue(all(set(p['dataset_input']) == {'workbook_path', 'worksheet_name'} for p in captured))
         self.assertNotIn('reference', json.dumps(captured))
