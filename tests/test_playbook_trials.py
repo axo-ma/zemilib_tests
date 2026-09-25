@@ -13,6 +13,7 @@ from zemi.component import ZemiComponent, _summarize_trials
 from zemi import env
 from zemi.playbook import (
     PLAYBOOK_OUTPUT_MIME,
+    PLAYBOOK_REPORT_MIME,
     _output_context,
     output_dir,
     output_params,
@@ -516,10 +517,21 @@ playbook_name = "one.ipynb"
         display.assert_called_once_with(
             {
                 PLAYBOOK_OUTPUT_MIME: {"score": 1, "nested": [1, {"ok": True}]},
+                PLAYBOOK_REPORT_MIME: [],
                 "text/plain": '{\n  "score": 1,\n  "nested": [\n    1,\n    {\n      "ok": true\n    }\n  ]\n}',
             },
             raw=True,
         )
+
+    def test_output_params_selects_report_keys(self) -> None:
+        import zemi.playbook
+        zemi.playbook._published = False
+        with patch("IPython.display.display") as display:
+            output_params({"ranges": ["A1:B2"], "raw_response": "text"}, report=["ranges"])
+        self.assertEqual(display.call_args.args[0][PLAYBOOK_REPORT_MIME], ["ranges"])
+        zemi.playbook._published = False
+        with self.assertRaisesRegex(ValueError, "report"):
+            output_params({"ranges": []}, report=["missing"])
 
     def test_output_validation(self) -> None:
         with self.assertRaisesRegex(TypeError, "mapping"):
@@ -560,6 +572,20 @@ playbook_name = "one.ipynb"
         playbook.output_path.write_text(json.dumps(document), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "more than once"):
             playbook._extract_output_params()
+        component.close()
+
+    def test_runner_extracts_report_output_selection(self) -> None:
+        component = self._write_output_notebook([])
+        playbook = component.playbooks[0]
+        document = json.loads(playbook.output_path.read_text(encoding="utf-8"))
+        document["cells"][0]["outputs"] = [{
+            "output_type": "display_data", "metadata": {},
+            "data": {PLAYBOOK_OUTPUT_MIME: {"ranges": [], "raw_response": "text"},
+                     PLAYBOOK_REPORT_MIME: ["ranges"]},
+        }]
+        playbook.output_path.write_text(json.dumps(document), encoding="utf-8")
+        self.assertEqual(playbook._extract_output_params(), {"ranges": [], "raw_response": "text"})
+        self.assertEqual(playbook._extract_report_output_keys(), ["ranges"])
         component.close()
 
 

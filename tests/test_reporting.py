@@ -106,10 +106,28 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("0.5 / —", fragment)
         self.assertIn("— / 0.8", fragment)
         runs = self.renderer.render_module_runs_summary(samples=samples, writer=writer, module_id="detect")
-        self.assertIn("### Sample 1", runs)
-        self.assertIn("### Sample 2", runs)
+        self.assertIn("### [Sample 1]", runs)
+        self.assertIn("### [Sample 2]", runs)
         self.assertIn("#sample-1", fragment)
         self.assertIn("#sample-2", fragment)
+
+    def test_runs_report_shows_selected_outputs_and_sample_parameters(self):
+        writer = self.writer
+        writer.register_module("detect", optimized=True)
+        writer.register_sample("detect", "s-1")
+        writer.register_run("detect", "r-1", sample_id="s-1")
+        samples = [{"id": "s-1", "params": {"encoding_format": "cell_all"},
+                    "runs": [{"run_id": "r-1", "status": "succeeded", "duration": "5.0 s",
+                              "prediction": {"ranges": ["A1:B2"], "raw_response": "large",
+                                             "lm_time": 3.2, "item_tokens": 20},
+                              "report_output_keys": ["ranges", "lm_time", "item_tokens"]}]}]
+        report = self.renderer.render_module_runs_summary(samples=samples, writer=writer, module_id="detect")
+        self.assertIn("[Sample 1](samples/", report)
+        self.assertIn("**Parameters:** encoding_format = cell_all", report)
+        self.assertIn("Outputs<br>ranges / LM Time / Item Tokens", report)
+        self.assertIn('["A1:B2"] / 3.2 / 20', report)
+        self.assertNotIn("raw_response", report)
+        self.assertNotIn("| Run | Sample |", report)
 
     def test_secret_redaction_and_custom_fragment(self):
         writer = self.writer
