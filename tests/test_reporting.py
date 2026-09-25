@@ -5,12 +5,19 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from zemi.reporting import DefaultReportRenderer, ReportWriter, _replace_report
+from zemi.reporting import DefaultReportRenderer, ReportWriter, _cell, _replace_report
 from zemi.dataset import table_evaluator
 from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_report_floats_show_three_decimal_places_without_changing_values(self):
+        metrics = {"f1": 0.6666666667, "count": 24}
+        self.assertEqual(_cell(metrics), '{"count": 24, "f1": 0.667}')
+        self.assertEqual(_cell(metrics["f1"]), "0.667")
+        self.assertEqual(_cell(1.0), "1.000")
+        self.assertEqual(metrics["f1"], 0.6666666667)
+
     def setUp(self):
         env.path.tmp.mkdir(parents=True, exist_ok=True)
         self.tmp = tempfile.TemporaryDirectory(dir=env.path.tmp)
@@ -103,8 +110,8 @@ class ReportingTests(unittest.TestCase):
             param_names=["temperature"], writer=writer, module_id="detect")
         self.assertIn("Parameters<br>temperature", fragment)
         self.assertIn("Metrics<br>accuracy / coverage", fragment)
-        self.assertIn("0.5 / —", fragment)
-        self.assertIn("— / 0.8", fragment)
+        self.assertIn("0.500 / —", fragment)
+        self.assertIn("— / 0.800", fragment)
         runs = self.renderer.render_module_runs_summary(samples=samples, writer=writer, module_id="detect")
         self.assertIn("### [Sample 1]", runs)
         self.assertIn("### [Sample 2]", runs)
@@ -125,7 +132,7 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("[Sample 1](samples/", report)
         self.assertIn("**Parameters:** encoding_format = cell_all", report)
         self.assertIn("Outputs<br>ranges / LM Time / Item Tokens", report)
-        self.assertIn('["A1:B2"] / 3.2 / 20', report)
+        self.assertIn('["A1:B2"] / 3.200 / 20', report)
         self.assertNotIn("raw_response", report)
         self.assertNotIn("| Run | Sample |", report)
 
