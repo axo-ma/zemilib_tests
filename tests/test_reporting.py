@@ -11,6 +11,36 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_dataset_errors_display_raw_response_and_full_item_text(self):
+        from types import SimpleNamespace
+        w=self.writer
+        w.register_module('m')
+        w.register_dataset('m')
+        w.register_sample('m','s')
+        w.register_item('m','i')
+        w.register_run('m','r')
+        item={'id':'i','input':{},'ground_truth':[]}
+        run={'dataset_item_id':'i','item':item,'run_id':'r','status':'succeeded',
+             'prediction':{'raw_response':'{"unexpected":["A6"]}'},'evaluation_error':'invalid JSON contract'}
+        trial=SimpleNamespace(sample=None,report_sample_id='s',runs=[run])
+        dataset=SimpleNamespace(items=[item])
+        def summary():
+            return self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
+        text=summary()
+        self.assertIn('[Error](dataset-items/m-i.md) · ` {"unexpected":["A6"]} `',text)
+        raw='```\n<answer>|x & y\n'+('long response '*20)
+        run['prediction']['raw_response']=raw
+        text=summary()
+        self.assertIn('[...](dataset-items/m-i.md)',text)
+        self.assertNotIn('long response '*20,text)
+        full=self.renderer.render_worksheet_detection_report(dataset=dataset,item=item,history=[trial],writer=w,module_id='m')
+        self.assertIn(raw,full)
+        self.assertIn('## Raw responses for errors',full)
+        run['prediction']=None
+        self.assertIn('[Error](dataset-items/m-i.md) · —',summary())
+        run['prediction']={'answer':'wrong'}
+        self.assertIn('"answer": "wrong"',summary())
+
     def test_detail_navigation_has_one_parent_link(self):
         w = self.writer
         w.register_module('m', optimized=True)
