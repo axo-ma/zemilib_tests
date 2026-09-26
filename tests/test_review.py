@@ -46,7 +46,8 @@ class ReviewTests(unittest.TestCase):
             writer = ReportWriter(root / 'run-test')
             writer.register_module('m', optimized=True)
             writer.register_review('m')
-            samples = [{'id': f'custom-{i}', 'params': {'temperature': i},
+            samples = [{'id': f'custom-{i}', 'params': {'temperature': i,
+                'encoding_prompt': {'prompt_name': 'compact_md', 'prompt_file': '@comp/hidden-in-results.md'}},
                 'score': 0.666666, 'runs': [
                     {'status': 'succeeded', 'prediction': {'item_tokens': 10, 'prompt_tokens': 100}},
                     {'status': 'failed', 'prediction': None, 'evaluation_error': {'message': 'failure'}}]}
@@ -56,6 +57,9 @@ class ReviewTests(unittest.TestCase):
             self.assertIn('| Samples | 3 |', body)
             self.assertIn('| Dataset items | 17 |', body)
             self.assertIn('0.667', body)
+            results = body.split('## Results', 1)[1].split('## Prompts and examples', 1)[0]
+            self.assertIn('compact_md', results)
+            self.assertNotIn('hidden-in-results.md', results)
             self.assertIn('10.000', body)
             self.assertIn('3 / 6', body)
             self.assertIn('````text', body)

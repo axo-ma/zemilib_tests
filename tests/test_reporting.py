@@ -11,6 +11,30 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_result_tables_shorten_prompt_binding_without_changing_configuration(self):
+        from types import SimpleNamespace
+        binding = {'prompt_name': 'cell_all_md', 'prompt_file': '@comp/prompts.md',
+                   'encoder': '@comp/encoder.py:encode', 'encoding_format': 'cell_all'}
+        params = {'encoding_prompt': binding, 'temperature': 0.0}
+        sample = {'id': 's', 'params': params, 'runs': []}
+        w = self.writer
+        w.register_module('m')
+        w.register_sample('m', 's')
+        w.register_dataset('m')
+        texts = [self.renderer.render_module_samples_summary(samples=[sample],
+                     param_names=list(params), writer=w, module_id='m'),
+                 self.renderer.render_module_selected_sample(selected='s', samples=[sample],
+                     mode='optimize', writer=w, module_id='m'),
+                 self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[]),
+                     history=[SimpleNamespace(sample=SimpleNamespace(values=params),
+                         report_sample_id='s', runs=[])], writer=w, module_id='m')]
+        for text in texts:
+            self.assertIn('cell_all_md', text)
+            self.assertNotIn('@comp/prompts.md', text)
+            self.assertNotIn('@comp/encoder.py', text)
+        self.assertIn('@comp/prompts.md', self.renderer.render_module_parameters(params=params))
+        self.assertEqual(params['encoding_prompt'], binding)
+
     def test_dataset_exact_matches_are_checkmarks_including_empty_targets(self):
         from types import SimpleNamespace
         w = self.writer
