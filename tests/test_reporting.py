@@ -11,6 +11,46 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_detail_navigation_has_one_parent_link(self):
+        w = self.writer
+        w.register_module('m', optimized=True)
+        w.register_dataset('m')
+        w.register_item('m','i')
+        w.register_sample('m','s')
+        w.register_run('m','r',sample_id='s')
+        w.write_sample_trial('m','s','## Runs\n\n[Run r](../runs/m-run-r.md)')
+        expected = [('sample','s','[Back to Module Report](../m.md)'),
+                    ('module_runs',None,'[Back to Module Report](m.md)'),
+                    ('run','r','[Back to Runs Report](../m.runs.md)'),
+                    ('item','i','[Back to Dataset Report](../m.dataset.md)')]
+        for kind,identity,link in expected:
+            text=(w.root / w.ref(kind,'m',identity).path).read_text(encoding='utf-8')
+            self.assertEqual(text.splitlines()[2],link)
+        self.assertIn('[Run r](../runs/m-run-r.md)',(w.root/w.ref('sample','m','s').path).read_text(encoding='utf-8'))
+        w.register_module('single',optimized=False)
+        ref=w.register_run('single','only')
+        self.assertTrue((w.root / w.ref('module_runs','single').path).is_file())
+        self.assertEqual((w.root/ref.path).read_text(encoding='utf-8').splitlines()[2],
+                         '[Back to Runs Report](../single.runs.md)')
+
+    def test_sample_duration_sums_lm_times_and_keeps_missing_values(self):
+        w=self.writer
+        w.register_module('m',optimized=True)
+        w.register_sample('m','s')
+        sample={'id':'s','duration':'2m 15s','runs':[
+            {'prediction':{'lm_time':65,'item_tokens':10,'prompt_tokens':100}},
+            {'prediction':{'lm_time':45,'item_tokens':20,'prompt_tokens':200}},
+            {'prediction':None}]}
+        text=self.renderer.render_module_samples_summary(samples=[sample],param_names=[],writer=w,module_id='m')
+        self.assertIn('Duration<br>(module / LM)',text)
+        self.assertIn('15.000 / 150.000 | 2m 15s / 1m 50s',text)
+        sample['runs']=[{'prediction':{'lm_time':0}},{'prediction':{'lm_time':True}}]
+        text=self.renderer.render_module_samples_summary(samples=[sample],param_names=[],writer=w,module_id='m')
+        self.assertIn('— / — | 2m 15s / 0m 00s',text)
+        sample['runs']=[]
+        text=self.renderer.render_module_samples_summary(samples=[sample],param_names=[],writer=w,module_id='m')
+        self.assertIn('— / — | 2m 15s / —',text)
+
     def test_generic_predictions_metrics_and_standalone_dataset_reports(self):
         from types import SimpleNamespace
         from zemi.dataset import TrialDataset
@@ -60,8 +100,8 @@ class ReportingTests(unittest.TestCase):
         w.register_sample('m','s')
         sample={'id':'s','params':params,'runs':[run,dict(run,prediction={'item_tokens':20})]}
         summary=self.renderer.render_module_samples_summary(samples=[sample],param_names=[],writer=w,module_id='m')
-        self.assertIn('Mean item tokens',summary)
-        self.assertIn('15.000 | 100.000',summary)
+        self.assertIn('Mean Tokens<br>(item / prompt)',summary)
+        self.assertIn('15.000 / 100.000',summary)
         self.assertEqual(JobReporting._duration({'duration_seconds':135}), '2m 15s')
         self.assertEqual(JobReporting._duration({'duration_seconds':4080}), '1h 08m')
         self.assertEqual(run['prediction']['item_tokens'],10)
@@ -302,8 +342,8 @@ class ReportingTests(unittest.TestCase):
         sample_text = (writer.root / sample.path).read_text(encoding="utf-8")
         self.assertNotIn("**Status:** running", run_text)
         self.assertIn("model unavailable", run_text)
-        self.assertIn("../samples/", run_text)
-        self.assertIn("../runs/", sample_text)
+        self.assertIn("[Back to Runs Report](../m.runs.md)", run_text)
+        self.assertEqual(sample_text.splitlines()[2], "[Back to Module Report](../m.md)")
 
     def test_set_evaluation_permutation_duplicates_and_extra(self):
         item = {"id": "book::sheet", "input": {}, "ground_truth": ["A1:B2", "D1:E5"]}
