@@ -150,6 +150,43 @@ path = "@comp/data.json"
             run.assert_not_called()
         component.close()
 
+    def test_named_prompt_samples_flow_through_reports_and_review(self):
+        from zemi.review import configure_review
+        component = self.component()
+        component.close()
+        Path('prompts.md').write_text('# my_prompt\n## Input\n{{item}}\n', encoding='utf-8')
+        Path('encoder.py').write_text('def encode(path, sheet, *, format):\n    return "data"\n', encoding='utf-8')
+        Path('job.py').write_text('# entrypoint', encoding='utf-8')
+        Path('arsenal.toml').write_text('', encoding='utf-8')
+        Path('zemi').mkdir()
+        config = Path('params/test.toml').read_text(encoding='utf-8')
+        config = config.replace('x = { values = [0, 1], start = 0 }',
+            'x = { values = [0, 1], start = 0 }\nencoding_prompt = { prompt_name = "my_prompt", '
+            'prompt_file = "@comp/prompts.md", encoder = "@comp/encoder.py:encode", encoding_format = "custom" }')
+        Path('params/test.toml').write_text(config, encoding='utf-8')
+        env.path.comp._runid = None
+        component = ZemiComponent('@comp/params/test.toml')
+        import nbformat
+        library_parent = str(Path(__file__).resolve().parents[1])
+        notebook = nbformat.v4.new_notebook()
+        notebook.metadata.kernelspec = {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}
+        notebook.cells = [
+            nbformat.v4.new_code_cell('x = 0\nencoding_prompt = None\ndataset_input = {}\narsenal_config_path = ""\narsenal_start_and_stop_at_job_level = True', metadata={'tags': ['parameters']}),
+            nbformat.v4.new_code_cell(f'import sys\nsys.path.insert(0, {library_parent!r})\nfrom zemi.prompting import build_prompt\nfrom zemi.playbook import output_params\nitem, prompt = build_prompt(encoding_prompt, dataset_input["workbook_path"], dataset_input["worksheet_name"])\nassert item == "data"\nassert "data" in prompt\noutput_params({{"ranges": ["A1:B2"] if dataset_input["worksheet_name"] == "Данные" else []}})'),
+        ]
+        nbformat.write(notebook, 'one.ipynb')
+        configure_review(component, '@comp/job.py')
+        with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin'), patch('zemi.arsenal.end'):
+            component.run()
+        component.close()
+        samples = component.report.data['job_trial']['playbook_trials'][0]['samples']
+        self.assertEqual([s['sample_trial_id'] for s in samples], ['my_prompt-001', 'my_prompt-002'])
+        self.assertTrue(all(r['sample_trial_id'] == s['sample_trial_id'] for s in samples for r in s['runs']))
+        snapshot = json.loads((component.run_directory / 'detect.review.json').read_text(encoding='utf-8'))
+        self.assertEqual(snapshot['prompts']['my_prompt'], '## Input\n{{item}}')
+        self.assertIn('encoder.py', snapshot['sources'])
+        self.assertIn('my_prompt-002', (component.run_directory / 'detect.review.md').read_text(encoding='utf-8'))
+
     def test_component_lifecycle_report_and_no_ground_truth_in_notebook(self):
         component = self.component()
         (self.root / 'zemi').mkdir()
