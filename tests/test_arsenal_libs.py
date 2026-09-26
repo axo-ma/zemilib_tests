@@ -8,6 +8,37 @@ from zemi.arsenal.libs import LibDependencyError, Libs
 
 
 class ArsenalLibsTests(unittest.TestCase):
+    def test_shared_kernel_client_cache_keys_settings_and_replaces_closed_clients(self):
+        from zemi.arsenal.libs import _set_client_reuse, _close_reused_clients
+        from types import SimpleNamespace
+        clients = []
+        class Client:
+            _closed = False
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                clients.append(self)
+            def is_closed(self):
+                return self._closed
+
+            def close(self):
+                self._closed = True
+        _set_client_reuse(True)
+        try:
+            with patch('zemi.arsenal.libs.import_module', return_value=SimpleNamespace(OpenAI=Client)):
+                def get(model='one', key='secret', url='http://127.0.0.1:8080'):
+                    return Libs(url, model=model, api_key=key).openai.client
+                first = get()
+                self.assertIs(first, get())
+                self.assertIsNot(first, get(model='two'))
+                self.assertIsNot(first, get(key='other'))
+                self.assertIsNot(first, get(url='http://127.0.0.1:8081'))
+                first.close()
+                self.assertIsNot(first, get())
+        finally:
+            _close_reused_clients()
+            _set_client_reuse(False)
+        self.assertTrue(all(c.is_closed() for c in clients))
+
     def setUp(self) -> None:
         self.libs = Libs(
             "http://127.0.0.1:8080/v1/",
@@ -107,4 +138,3 @@ class ArsenalLibsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -222,7 +222,7 @@ path = "@comp/data.json"
         notebook.metadata.kernelspec = {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}
         notebook.cells = [
             nbformat.v4.new_code_cell('x = 0\ndataset_input = {}\narsenal_config_path = ""\narsenal_start_and_stop_at_job_level = True', metadata={'tags': ['parameters']}),
-            nbformat.v4.new_code_cell(f'import sys\nsys.path.insert(0, {library_parent!r})\nfrom zemi.playbook import output_params\nassert set(dataset_input) == {{"workbook_path", "worksheet_name"}}\noutput_params({{"ranges": []}})'),
+            nbformat.v4.new_code_cell(f'import sys, os\nsys.path.insert(0, {library_parent!r})\nfrom zemi.playbook import output_params\nassert "previous_run" not in globals()\nprevious_run = True\nassert set(dataset_input) == {{"workbook_path", "worksheet_name"}}\noutput_params({{"ranges": [], "pid": os.getpid()}})'),
         ]
         nbformat.write(notebook, 'one.ipynb')
         # Freeze a valid sample using the public holdout API.
@@ -241,7 +241,54 @@ path = "@comp/data.json"
         self.assertEqual(parent['samples'][0]['metrics']['correct_empty'], 1, parent['samples'][0]['runs'])
         for run in parent['samples'][0]['runs']:
             self.assertTrue((component.run_directory / run['artifacts']['output_notebook']).is_file())
-            self.assertEqual(run['prediction'], {'ranges': []})
+            self.assertEqual(run['prediction']['ranges'], [])
+        self.assertEqual(len({r['prediction']['pid'] for r in parent['samples'][0]['runs']}), 1)
+        self.assertFalse(component._module_kernels)
+
+    def test_shared_kernel_restarts_after_error_and_does_not_leak_variables(self):
+        import nbformat
+        component = self.component()
+        library_parent = str(Path(__file__).resolve().parents[1])
+        nb = nbformat.v4.new_notebook(metadata={'kernelspec': {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}})
+        nb.cells = [
+            nbformat.v4.new_code_cell('x = 0\ndataset_input = {}\narsenal_config_path = ""\narsenal_start_and_stop_at_job_level = True', metadata={'tags': ['parameters']}),
+            nbformat.v4.new_code_cell(f'import sys, os\nsys.path.insert(0, {library_parent!r})\nfrom zemi.playbook import output_params\nassert "previous_run" not in globals()\nprevious_run = True\noutput_params({{"ranges": ["A1:B2"] if dataset_input["worksheet_name"] == "Данные" else [], "pid": os.getpid()}})\nif x == 0 and dataset_input["worksheet_name"] == "Данные":\n    raise RuntimeError("intentional failure")'),
+        ]
+        nbformat.write(nb, 'one.ipynb')
+        with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin'), patch('zemi.arsenal.end'):
+            try:
+                component.run()
+            finally:
+                component.close()
+        trials = component.report.data['trials']
+        self.assertEqual([t['status'] for t in trials], ['failed', 'succeeded', 'succeeded', 'succeeded'])
+        self.assertNotEqual(trials[0]['output_params']['pid'], trials[1]['output_params']['pid'])
+        self.assertEqual(len({t['output_params']['pid'] for t in trials[1:]}), 1)
+        self.assertFalse(component._module_kernels)
+        self.assertTrue(all((component.run_directory / t['output_notebook']).is_file() for t in trials))
+
+    def test_reuse_kernel_can_be_disabled(self):
+        import nbformat
+        component = self.component()
+        config = self.root / 'params/test.toml'
+        config.write_text(config.read_text(encoding='utf-8').replace('max_trials = 2', 'max_trials = 2\nreuse_kernel = false'), encoding='utf-8')
+        component.close()
+        env.path.comp._runid = None
+        component = ZemiComponent('@comp/params/test.toml', sample_overrides={'detect': {'x': 0}})
+        library_parent = str(Path(__file__).resolve().parents[1])
+        nb = nbformat.v4.new_notebook(metadata={'kernelspec': {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}})
+        nb.cells = [
+            nbformat.v4.new_code_cell('x = 0\ndataset_input = {}\narsenal_config_path = ""\narsenal_start_and_stop_at_job_level = True', metadata={'tags': ['parameters']}),
+            nbformat.v4.new_code_cell(f'import sys, os\nsys.path.insert(0, {library_parent!r})\nfrom zemi.playbook import output_params\noutput_params({{"ranges": [], "pid": os.getpid()}})'),
+        ]
+        nbformat.write(nb, 'one.ipynb')
+        with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin'), patch('zemi.arsenal.end'):
+            try:
+                component.run()
+            finally:
+                component.close()
+        self.assertEqual(len({t['output_params']['pid'] for t in component.report.data['trials']}), 2)
+        self.assertFalse(component._module_kernels)
 
     def test_component_can_replay_best_sample_from_report(self):
         component = self.component()

@@ -11,6 +11,35 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_dataset_exact_matches_are_checkmarks_including_empty_targets(self):
+        from types import SimpleNamespace
+        w = self.writer
+        w.register_module('m')
+        w.register_dataset('m')
+        w.register_sample('m', 'm-sample-0001')
+        items = [{'id': 'table', 'ground_truth': ['A1:B3']}, {'id': 'empty', 'ground_truth': []}]
+        for item in items:
+            w.register_item('m', item['id'])
+        runs = [{'dataset_item_id': item['id'], 'status': 'succeeded',
+                 'prediction': {'ranges': item['ground_truth']}, 'metrics': {'exact_match': True}}
+                for item in items]
+        trial = SimpleNamespace(sample=None, report_sample_id='m-sample-0001', runs=runs)
+        text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
+            history=[trial], writer=w, module_id='m')
+        self.assertIn('| ["A1:B3"] | ✅ |', text)
+        self.assertIn('| [] | ✅ |', text)
+        runs[0]['evaluation_error'] = 'bad range'
+        text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
+            history=[trial], writer=w, module_id='m')
+        self.assertIn('| ["A1:B3"] | ["A1:B3"] |', text)
+
+    def test_execution_filenames_do_not_repeat_module_and_kind(self):
+        w = self.writer
+        w.register_module('m')
+        self.assertEqual(w.register_sample('m', 'm-sample-0001').path, 'samples/m-sample-0001.md')
+        self.assertEqual(w.register_run('m', 'm-run-000001').path, 'runs/m-run-000001.md')
+        self.assertEqual(w.register_sample('m', 'custom').path, 'samples/m-sample-custom.md')
+
     def test_dataset_sample_columns_show_expected_and_actual_ranges(self):
         from types import SimpleNamespace
         writer = self.writer

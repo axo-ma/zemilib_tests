@@ -657,8 +657,8 @@ playbook_name = "two.ipynb"
         self.assertFalse((component.run_directory / "sample_trials").exists())
         for playbook in component.playbooks:
             self.assertTrue(playbook.output_path.is_file())
-            self.assertTrue(playbook.output_html_path.is_file())
-            self.assertIn("<html", playbook.output_html_path.read_text(encoding="utf-8").lower())
+            self.assertFalse(playbook.output_path.with_suffix('.html').exists())
+            self.assertNotIn('output_html', report['trials'][component.playbooks.index(playbook)])
             module_ref = component.reporting.writer.ref("module", playbook.module_id)
             module_markdown = (component.run_directory / module_ref.path).read_text(encoding="utf-8")
             self.assertIn("## Results", module_markdown)

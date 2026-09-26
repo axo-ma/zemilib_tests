@@ -43,6 +43,15 @@ def document():
 
 
 class Params06SchemaTests(unittest.TestCase):
+    def test_kernel_reuse_defaults_to_true_and_can_be_disabled(self):
+        source = document()
+        self.assertIs(validate_document(source)['modules'][0]['optimizer']['reuse_kernel'], True)
+        source['modules'][0]['optimizer']['reuse_kernel'] = False
+        self.assertIs(validate_document(source)['modules'][0]['optimizer']['reuse_kernel'], False)
+        source['modules'][0]['optimizer']['reuse_kernel'] = 'false'
+        with self.assertRaisesRegex(ValueError, 'reuse_kernel must be boolean'):
+            validate_document(source)
+
     def test_05_playbooks_migrate_to_06_modules_with_warning(self):
         source = document()
         source["system"]["version"] = "0.5"

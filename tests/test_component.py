@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 
 from zemi import env
 from zemi.component import ZemiComponent
+from zemi.playbook import PLAYBOOK_OUTPUT_MIME
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -234,6 +235,23 @@ enabled = false
         self.assertEqual(timing["metadata"]["tags"], ["zemi-cell-timing"])
         self.assertEqual(timing["metadata"]["zemi"]["source_cell_id"], "executed-cell")
         self.assertIn("1.235 с", "".join(timing["source"]))
+
+    def test_success_uses_returned_notebook_without_reading_output_file(self) -> None:
+        import nbformat
+        component = ZemiComponent()
+        playbook = component.playbooks[0]
+        nb = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell('pass',
+            metadata={'papermill': {'duration': 0.125}}, outputs=[nbformat.v4.new_output(
+                'display_data', data={PLAYBOOK_OUTPUT_MIME: {'answer': 42}})])])
+        papermill = Mock()
+        papermill.execute_notebook.return_value = nb
+        with patch.dict(sys.modules, {'papermill': papermill}), patch.object(
+                playbook, '_read_output_notebook', side_effect=AssertionError('unexpected output read')):
+            playbook.run()
+        component.close()
+        self.assertEqual(component.report.data['trials'][0]['output_params'], {'answer': 42})
+        self.assertTrue(playbook.output_path.is_file())
+        self.assertFalse(playbook.output_path.with_suffix('.html').exists())
 
     def test_failed_playbook_is_saved_in_component_report(self) -> None:
         papermill = Mock()
