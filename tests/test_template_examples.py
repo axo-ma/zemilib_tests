@@ -95,7 +95,7 @@ client = SimpleNamespace(base_url='http://stub/v1', chat=SimpleNamespace(complet
                         self.assertEqual([s['sample_trial_id'] for s in parent['samples']],
                             ['cells_basic-001', 'cells_examples-001', 'cells_compact_basic-001', 'cells_compact_examples-001'])
                         self.assertTrue(all(s['score'] == 1 for s in parent['samples']))
-                        review = json.loads((component.run_directory / 'table-detection.review.json').read_text(encoding='utf-8'))
+                        review = json.loads((component.run_directory / 'table-detection.reproduction.json').read_text(encoding='utf-8'))
                         self.assertEqual(review['entrypoint'], 'optimizer_example/job.py')
                         self.assertEqual(len(review['prompts']), 4)
                         self.assertIn('data/validation/validation.json', review['sources'])

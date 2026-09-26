@@ -180,10 +180,10 @@ path = "@comp/data.json"
         samples = component.report.data['job_trial']['playbook_trials'][0]['samples']
         self.assertEqual([s['sample_trial_id'] for s in samples], ['my_prompt-001', 'my_prompt-002'])
         self.assertTrue(all(r['sample_trial_id'] == s['sample_trial_id'] for s in samples for r in s['runs']))
-        snapshot = json.loads((component.run_directory / 'detect.review.json').read_text(encoding='utf-8'))
+        snapshot = json.loads((component.run_directory / 'detect.reproduction.json').read_text(encoding='utf-8'))
         self.assertEqual(snapshot['prompts']['my_prompt'], '## Input\n{{item}}')
         self.assertIn('encoder.py', snapshot['sources'])
-        self.assertIn('my_prompt-002', (component.run_directory / 'detect.review.md').read_text(encoding='utf-8'))
+        self.assertNotIn('## Results', (component.run_directory / 'detect.reproduction.md').read_text(encoding='utf-8'))
 
     def test_component_lifecycle_report_and_no_ground_truth_in_notebook(self):
         component = self.component()
@@ -206,11 +206,11 @@ path = "@comp/data.json"
             begin.assert_called_once()
             end.assert_called_once()
         component.close()
-        review = (component.run_directory / 'detect.review.md').read_text(encoding='utf-8')
+        review = (component.run_directory / 'detect.reproduction.md').read_text(encoding='utf-8')
         self.assertIn('| Status | failed |', review)
         self.assertIn('| Successful runs / Total | 3 / 4 |', review)
-        self.assertIn('detect.review.json', review)
-        self.assertTrue((component.run_directory / 'detect.review.json').is_file())
+        self.assertIn('detect.reproduction.json', review)
+        self.assertTrue((component.run_directory / 'detect.reproduction.json').is_file())
         for obsolete in ('main.md', 'report.md'):
             self.assertFalse((component.run_directory / obsolete).exists())
         self.assertFalse((component.run_directory / 'sample_trials').exists())
@@ -235,14 +235,14 @@ path = "@comp/data.json"
         progress_report = component.run_directory / component.reporting.writer.ref('module', 'detect').path
         for target in (sample_report, dataset_report, progress_report):
             self.assertTrue(target.is_file())
-        self.assertIn('Ground truth', sample_report.read_text(encoding='utf-8'))
+        self.assertIn('Target', sample_report.read_text(encoding='utf-8'))
         self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
-        self.assertIn('Данные', sample_report.read_text(encoding='utf-8'))
+        self.assertIn('../dataset-items/detect-s.md', sample_report.read_text(encoding='utf-8'))
         progress = progress_report.read_text(encoding='utf-8')
         self.assertIn(f'({dataset_report.name})', progress)
         self.assertIn('## Module Optimization Progress', progress)
         self.assertIn('## Selected Sample', progress)
-        self.assertIn('Worksheets detected', dataset_report.read_text(encoding='utf-8'))
+        self.assertIn('Matches', dataset_report.read_text(encoding='utf-8'))
         raw_report = component.report.path.read_text(encoding='utf-8')
         self.assertIn('"worksheet_name": "Данные"', raw_report)
         self.assertNotIn('\\u0414', raw_report)

@@ -11,6 +11,69 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_generic_predictions_metrics_and_standalone_dataset_reports(self):
+        from types import SimpleNamespace
+        from zemi.dataset import TrialDataset
+        item = {'id': 'classification', 'input': {'text': 'hello'}, 'ground_truth': 'positive'}
+        run = {'dataset_item_id': item['id'], 'item': item, 'run_id': 'r', 'status': 'succeeded',
+               'prediction': 'negative', 'metrics': {'accuracy': 0.0, 'confidence': 0.6}}
+        w = self.writer
+        w.register_module('m')
+        w.register_dataset('m')
+        w.register_item('m',item['id'])
+        w.register_sample('m','s')
+        w.register_run('m','r')
+        trial = SimpleNamespace(sample=SimpleNamespace(values={}), report_sample_id='s', runs=[run])
+        dataset = TrialDataset([item])
+        text = self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
+        self.assertIn('| — | positive | negative |',text)
+        detail = self.renderer.render_worksheet_detection_report(dataset=dataset,item=item,history=[trial],writer=w,module_id='m')
+        self.assertIn('accuracy / confidence',detail)
+        self.assertIn('0.000 / 0.600',detail)
+        self.assertNotIn('ranges',detail)
+        self.assertNotIn('Worksheet',detail)
+        standalone, details = dataset.render_report(history=[trial])
+        self.assertIn('Matches',standalone)
+        self.assertIn('negative',standalone)
+        self.assertIn('accuracy / confidence',next(iter(details.values())))
+        self.assertNotIn('Avg F1',standalone)
+
+    def test_sample_prompt_order_feedback_hidden_and_token_means(self):
+        from types import SimpleNamespace
+        from zemi.reporting import JobReporting
+        params = {'encoding_prompt': {'prompt_name':'chosen'}}
+        run = {'item':{'id':'i','ground_truth':42},'dataset_item_id':'i','run_id':'r',
+               'status':'succeeded','comparison_prediction':42,
+               'prediction':{'answer':42,'item_tokens':10,'prompt_tokens':100},
+               'metrics':{'exact_match':True}}
+        trial = SimpleNamespace(param_sample=SimpleNamespace(values=params),_report_prompt='Captured {{item}}')
+        text = self.renderer.render_sample_trial(sample_trial=trial,runs=[run],metrics={'score':1},score=1,feedback={'secret_feedback':True})
+        self.assertLess(text.index('## Parameters'),text.index('## Prompt'))
+        self.assertLess(text.index('## Prompt'),text.index('## Evaluation'))
+        self.assertLess(text.index('## Evaluation'),text.index('## Runs'))
+        self.assertNotIn('Feedback',text)
+        self.assertNotIn('secret_feedback',text)
+        self.assertIn('Captured {{item}}',text)
+        self.assertIn('✅',text)
+        w=self.writer
+        w.register_module('m')
+        w.register_sample('m','s')
+        sample={'id':'s','params':params,'runs':[run,dict(run,prediction={'item_tokens':20})]}
+        summary=self.renderer.render_module_samples_summary(samples=[sample],param_names=[],writer=w,module_id='m')
+        self.assertIn('Mean item tokens',summary)
+        self.assertIn('15.000 | 100.000',summary)
+        self.assertEqual(JobReporting._duration({'duration_seconds':135}), '2m 15s')
+        self.assertEqual(JobReporting._duration({'duration_seconds':4080}), '1h 08m')
+        self.assertEqual(run['prediction']['item_tokens'],10)
+
+    def test_variable_configuration_has_no_concrete_value(self):
+        from zemi.params import ParamSpace
+        space=ParamSpace(config={'choice':{'values':['first','last'],'start':'first'},'fixed':'retained'})
+        text=self.renderer.render_module_optimization_config(config={},space=space)
+        self.assertIn('| choice | Variable | — |',text)
+        self.assertIn('| fixed | Fixed | retained |',text)
+        self.assertNotIn('first',text)
+
     def test_result_tables_shorten_prompt_binding_without_changing_configuration(self):
         from types import SimpleNamespace
         binding = {'prompt_name': 'cell_all_md', 'prompt_file': '@comp/prompts.md',
@@ -55,7 +118,7 @@ class ReportingTests(unittest.TestCase):
         runs[0]['evaluation_error'] = 'bad range'
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
             history=[trial], writer=w, module_id='m')
-        self.assertIn('| ["A1:B3"] | ["A1:B3"] |', text)
+        self.assertIn('[Error](dataset-items/', text)
 
     def test_execution_filenames_do_not_repeat_module_and_kind(self):
         w = self.writer
@@ -76,7 +139,8 @@ class ReportingTests(unittest.TestCase):
             writer.register_sample("m", sid)
             trials.append(SimpleNamespace(report_sample_id=sid,
                 sample=SimpleNamespace(values={"encoding_format": sid}),
-                runs=[{"dataset_item_id": "sheet", "prediction": prediction}]))
+                runs=[{"dataset_item_id": "sheet", "prediction": prediction,
+                       "comparison_prediction": prediction.get("ranges") if prediction else None}]))
         dataset = SimpleNamespace(items=[{"id": "sheet", "ground_truth": ["A1:B3"]}])
         text = self.renderer.render_trial_dataset(dataset=dataset, history=trials, writer=writer, module_id="m")
         self.assertIn("Sample 1 (s1)", text)

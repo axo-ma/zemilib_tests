@@ -56,12 +56,8 @@ class ReviewTests(unittest.TestCase):
                 module_id='m', writer=writer, item_count=17)
             self.assertIn('| Samples | 3 |', body)
             self.assertIn('| Dataset items | 17 |', body)
-            self.assertIn('0.667', body)
-            results = body.split('## Results', 1)[1].split('## Prompts and examples', 1)[0]
-            self.assertIn('compact_md', results)
-            self.assertNotIn('hidden-in-results.md', results)
-            self.assertIn('10.000', body)
+            self.assertNotIn('## Results', body)
+            self.assertNotIn('## Prompts and examples', body)
+            self.assertNotIn('hidden-in-results.md', body)
             self.assertIn('3 / 6', body)
-            self.assertIn('````text', body)
-            for i in range(3):
-                self.assertIn(f'custom-{i}', body)
+            self.assertIn('m.reproduction.json', body)
