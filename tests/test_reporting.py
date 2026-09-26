@@ -11,6 +11,34 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_dataset_sample_columns_show_expected_and_actual_ranges(self):
+        from types import SimpleNamespace
+        writer = self.writer
+        writer.register_module("m")
+        writer.register_dataset("m")
+        writer.register_item("m", "sheet")
+        trials = []
+        for sid, prediction in (("s1", {"ranges": []}), ("s2", None),
+                                ("s3", {"ranges": [f"A{i}:B{i}" for i in range(1, 20)]})):
+            writer.register_sample("m", sid)
+            trials.append(SimpleNamespace(report_sample_id=sid,
+                sample=SimpleNamespace(values={"encoding_format": sid}),
+                runs=[{"dataset_item_id": "sheet", "prediction": prediction}]))
+        dataset = SimpleNamespace(items=[{"id": "sheet", "ground_truth": ["A1:B3"]}])
+        text = self.renderer.render_trial_dataset(dataset=dataset, history=trials, writer=writer, module_id="m")
+        self.assertIn("Sample 1 (s1)", text)
+        self.assertIn("Sample 2 (s2)", text)
+        self.assertIn("| Target |", text)
+        self.assertIn('| ["A1:B3"] | [] | — |', text)
+        self.assertNotIn('["A1:B3"] /', text)
+        self.assertIn('[...](dataset-items/', text)
+        self.assertNotIn('A19:B19', text)
+        full = self.renderer.render_worksheet_detection_report(dataset=dataset,
+            item=dataset.items[0], history=trials, writer=writer, module_id="m")
+        self.assertIn("| Prediction |", full)
+        self.assertNotIn("Detected ranges", full)
+        self.assertIn("A19:B19", full)
+
     def test_report_floats_show_three_decimal_places_without_changing_values(self):
         metrics = {"f1": 0.6666666667, "count": 24}
         self.assertEqual(_cell(metrics), '{"count": 24, "f1": 0.667}')

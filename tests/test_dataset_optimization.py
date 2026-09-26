@@ -152,6 +152,11 @@ path = "@comp/data.json"
 
     def test_component_lifecycle_report_and_no_ground_truth_in_notebook(self):
         component = self.component()
+        (self.root / 'zemi').mkdir()
+        (self.root / 'job.py').write_text('# test entrypoint', encoding='utf-8')
+        component.reporting.configure_review('detect', entrypoint='@comp/job.py',
+            prompts={'test': '### Input\n{{worksheet_text}}\n### Output\n{"ranges":[]}'},
+            sources=['@comp/data.json'])
         captured = []
         def notebook(playbook):
             captured.append(copy.deepcopy(playbook.params))
@@ -168,6 +173,11 @@ path = "@comp/data.json"
             begin.assert_called_once()
             end.assert_called_once()
         component.close()
+        review = (component.run_directory / 'detect.review.md').read_text(encoding='utf-8')
+        self.assertIn('| Status | failed |', review)
+        self.assertIn('| Successful runs / Total | 3 / 4 |', review)
+        self.assertIn('detect.review.json', review)
+        self.assertTrue((component.run_directory / 'detect.review.json').is_file())
         for obsolete in ('main.md', 'report.md'):
             self.assertFalse((component.run_directory / obsolete).exists())
         self.assertFalse((component.run_directory / 'sample_trials').exists())
