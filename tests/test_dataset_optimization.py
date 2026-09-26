@@ -151,7 +151,6 @@ path = "@comp/data.json"
         component.close()
 
     def test_named_prompt_samples_flow_through_reports_and_review(self):
-        from zemi.review import configure_review
         component = self.component()
         component.close()
         Path('prompts.md').write_text('# my_prompt\n## Input\n{{item}}\n', encoding='utf-8')
@@ -175,7 +174,6 @@ path = "@comp/data.json"
             nbformat.v4.new_code_cell(f'import sys\nsys.path.insert(0, {library_parent!r})\nfrom zemi.prompting import build_prompt\nfrom zemi.playbook import output_params\nitem, prompt = build_prompt(encoding_prompt, dataset_input["workbook_path"], dataset_input["worksheet_name"])\nassert item == "data"\nassert "data" in prompt\noutput_params({{"ranges": ["A1:B2"] if dataset_input["worksheet_name"] == "Данные" else []}})'),
         ]
         nbformat.write(notebook, 'one.ipynb')
-        configure_review(component, '@comp/job.py')
         with patch('zemi.arsenal.ArsenalSession'), patch('zemi.arsenal.begin'), patch('zemi.arsenal.end'):
             component.run()
         component.close()
@@ -191,9 +189,7 @@ path = "@comp/data.json"
         component = self.component()
         (self.root / 'zemi').mkdir()
         (self.root / 'job.py').write_text('# test entrypoint', encoding='utf-8')
-        component.reporting.configure_review('detect', entrypoint='@comp/job.py',
-            prompts={'test': '### Input\n{{worksheet_text}}\n### Output\n{"ranges":[]}'},
-            sources=['@comp/data.json'])
+
         captured = []
         def notebook(playbook):
             captured.append(copy.deepcopy(playbook.params))
