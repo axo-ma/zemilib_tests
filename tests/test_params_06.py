@@ -43,6 +43,20 @@ def document():
 
 
 class Params06SchemaTests(unittest.TestCase):
+    def test_document_accepts_implicit_starts_and_rejects_invalid_domains(self):
+        source = document()
+        source["modules"][0]["params"] = {
+            "temperature": {"values": [0.2, 0.0]},
+            "seed": {"range": {"min": 1, "max": 3, "step": 1}},
+        }
+        validated = validate_document(source)
+        self.assertEqual(ParamSpace(config=validated["modules"][0]["params"]).start.values,
+                         {"temperature": 0.2, "seed": 1})
+        for wrapper in ({"values": []}, {"values": [0], "start": 1}):
+            source["modules"][0]["params"] = {"x": wrapper}
+            with self.assertRaises(ValueError):
+                validate_document(source)
+
     def test_kernel_reuse_defaults_to_true_and_can_be_disabled(self):
         source = document()
         self.assertIs(validate_document(source)['modules'][0]['optimizer']['reuse_kernel'], True)
@@ -157,6 +171,64 @@ class Params06SchemaTests(unittest.TestCase):
 
 
 class ParamSpaceAndOptimizerTests(unittest.TestCase):
+    def test_optional_start_defaults_and_explicit_override(self):
+        space = ParamSpace(config={
+            "temperature": {"values": [0.5, 0.0, 0.2]},
+            "seed": {"range": {"min": 2, "max": 6, "step": 2}},
+            "override": {"values": [1, 2], "start": 2},
+            "range_override": {"range": {"min": 0, "max": 2, "step": 1}, "start": 1},
+            "float_range": {"range": {"min": 0.0, "max": 1.0, "step": 0.2}},
+        })
+        self.assertEqual(space.start.values, {"temperature": 0.5, "seed": 2, "override": 2, "range_override": 1, "float_range": 0.0})
+
+    def test_composite_default_is_complete_and_independent(self):
+        binding = {"prompt_name": "first", "prompt_file": "@comp/params/prompts.md",
+                   "encoder": "@comp/params/encoder.py:encode", "options": {"formats": ["cells"]}}
+        space = ParamSpace(config={"encoding_prompt": {"values": [binding, {"prompt_name": "second"}]}})
+        self.assertEqual(space.start.values["encoding_prompt"], binding)
+        sample = space.start
+        sample.values["encoding_prompt"]["options"]["formats"].append("rows")
+        self.assertEqual(space.start.values["encoding_prompt"], binding)
+        binding["prompt_name"] = "changed"
+        self.assertEqual(space.start.values["encoding_prompt"]["prompt_name"], "first")
+
+    def test_optional_start_validation(self):
+        for wrapper, message in [
+            ({"values": []}, "non-empty array"),
+            ({"values": [], "start": 0}, "non-empty array"),
+            ({"values": [0, 1], "start": 2}, "member of its domain"),
+            ({"range": {"min": 0, "max": 4, "step": 2}, "start": 1}, "member of its domain"),
+            ({"values": [{"name": "first"}], "start": {"name": "other"}}, "member of its domain"),
+        ]:
+            with self.subTest(wrapper=wrapper), self.assertRaisesRegex(ValueError, message):
+                ParamSpace(config={"x": wrapper})
+
+    def test_default_start_preserves_grid_and_all_optimizer_histories(self):
+        implicit = ParamSpace(config={"x": {"values": [2, 0, 1]},
+                                      "y": {"range": {"min": 0, "max": 2, "step": 1}}})
+        explicit = ParamSpace(config={"x": {"values": [2, 0, 1], "start": 2},
+                                      "y": {"range": {"min": 0, "max": 2, "step": 1}, "start": 0}})
+        expected = [{"x": x, "y": y} for x in [2, 0, 1] for y in [0, 1, 2]]
+        self.assertEqual([s.values for s in implicit.grid()], expected)
+        self.assertEqual(implicit.grid(), explicit.grid())
+        for strategy in ("grid", "random", "coordinate", "block_coordinate"):
+            config = {"strategy": strategy, "max_trials": 9, "seed": 17}
+            if strategy == "block_coordinate":
+                config["blocks"] = [["x", "y"]]
+            histories = []
+            for space in (implicit, explicit):
+                optimizer = PlaybookOptimizer(config=config, param_space=space)
+                history = []
+                while (sample := optimizer.next_param_sample(history)) is not None:
+                    history.append(self.result(sample, sample.values["x"] + sample.values["y"]))
+                    optimizer.observe(history, history[-1])
+                keys = [r.sample.key() for r in history]
+                self.assertEqual(len(keys), len(set(keys)))
+                self.assertEqual(keys.count(space.start.key()), 1)
+                histories.append((keys, optimizer.best_param_sample(history)))
+            with self.subTest(strategy=strategy):
+                self.assertEqual(histories[0], histories[1])
+
     def setUp(self):
         self.space = ParamSpace(config={
             "fixed": "x",

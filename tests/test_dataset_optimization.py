@@ -408,7 +408,8 @@ path = "@comp/data.json"
         config_path = Path('params/test.toml')
         text = config_path.read_text(encoding='utf-8').replace(
             'mode = "optimize"', 'mode = { select = ["optimize", "start_only"] }'
-        )
+        ).replace('x = { values = [0, 1], start = 0 }',
+                  'x = { values = [0, 1] }\ny = { range = { min = 2, max = 4, step = 1 } }')
         config_path.write_text(text, encoding='utf-8')
         with patch('builtins.input', return_value='2'):
             component = ZemiComponent('@comp/params/test.toml')
@@ -425,7 +426,7 @@ path = "@comp/data.json"
         self.assertEqual(trial['optimizer']['mode'], 'start_only')
         self.assertEqual(len(trial['samples']), 1)
         self.assertEqual(len(trial['samples'][0]['runs']), 2)
-        self.assertEqual(trial['best_params'], {'x': 0})
+        self.assertEqual(trial['best_params'], {'x': 0, 'y': 2})
         module_doc = (component.run_directory / component.reporting.writer.ref('module', 'detect').path).read_text(encoding='utf-8')
         self.assertIn('No parameter search was performed.', module_doc)
         self.assertIn('`start_only`', (component.run_directory / 'index.md').read_text(encoding='utf-8'))

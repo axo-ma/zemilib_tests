@@ -56,7 +56,8 @@ model_name = "qwen35_4b"
 
 # ParamSpace example (replace the fixed values in a playbook above):
 # temperature = { values = [0.0, 0.2, 0.5, 0.8], start = 0.2 }
-# seed = { range = { min = 1, max = 5, step = 1 }, start = 1 }
+# seed = { range = { min = 1, max = 5, step = 1 } } # defaults to min
+# prompt_style = { values = ["brief", "detailed"] } # defaults to first value
 #
 # [modules.optimizer]
 # mode = "optimize"
