@@ -86,3 +86,13 @@ reasoning = false
             self.assertNotIn('Array score', body)
             self.assertNotIn('| Change |', body)
             self.assertIn('Module Report', (root / 'run-test/m.review.md').read_text(encoding='utf-8'))
+            samples = [{'sample_trial_id': f'custom-{i}',
+                        'params': {'encoding_format': 'plain', 'temperature': i},
+                        'runs': []} for i in range(3)]
+            body = render_review(snapshot, samples=samples, report={'status': 'running'},
+                module_id='m', writer=writer, item_count=17)
+            self.assertIn('| Samples | 3 |', body)
+            self.assertIn('| Dataset items | 17 |', body)
+            for i in range(3):
+                self.assertIn(f'custom-{i}', body)
+                self.assertIn(f'"temperature": {i}', body)
