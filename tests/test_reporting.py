@@ -88,9 +88,9 @@ class ReportingTests(unittest.TestCase):
                'metrics':{'exact_match':True}}
         trial = SimpleNamespace(param_sample=SimpleNamespace(values=params),_report_prompt='Captured {{item}}')
         text = self.renderer.render_sample_trial(sample_trial=trial,runs=[run],metrics={'score':1},score=1,feedback={'secret_feedback':True})
-        self.assertLess(text.index('## Parameters'),text.index('## Prompt'))
-        self.assertLess(text.index('## Prompt'),text.index('## Evaluation'))
-        self.assertLess(text.index('## Evaluation'),text.index('## Runs'))
+        self.assertLess(text.index('## Parameters'),text.index('## Evaluation'))
+        self.assertLess(text.index('## Evaluation'),text.index('## Prompt'))
+        self.assertLess(text.index('## Prompt'),text.index('## Runs'))
         self.assertNotIn('Feedback',text)
         self.assertNotIn('secret_feedback',text)
         self.assertIn('Captured {{item}}',text)
