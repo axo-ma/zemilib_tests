@@ -139,6 +139,22 @@ path = "@comp/data.json"
 ''', encoding='utf-8')
         return ZemiComponent('@comp/params/test.toml')
 
+    def test_explicit_builtin_dataset_type_prepares_without_reimport(self):
+        from zemi.sample_trial import _load_custom
+        self.assertIs(_load_custom('@comp/zemi/dataset.py:TableDetectionTrialDataset'),
+                      TableDetectionTrialDataset)
+        with self.assertRaisesRegex(ValueError, 'not a class'):
+            _load_custom('@comp/zemi/dataset.py:missing')
+        component = self.component()
+        component.playbooks[0].optimizer_config['trial_dataset']['type'] = (
+            '@comp/zemi/dataset.py:TableDetectionTrialDataset')
+        try:
+            prepared = component._prepare_sample_trials()
+            self.assertIs(type(prepared['detect'][0]), TableDetectionTrialDataset)
+            self.assertEqual(len(prepared['detect'][0].items), 2)
+        finally:
+            component.close()
+
     def test_component_failfast_before_arsenal_and_notebook(self):
         component = self.component()
         self.data['items'][1]['ground_truth'] = ['bad']
