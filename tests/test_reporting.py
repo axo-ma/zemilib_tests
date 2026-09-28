@@ -46,19 +46,44 @@ class ReportingTests(unittest.TestCase):
         def summary():
             return self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
         text=summary()
-        self.assertIn('[Error](dataset-items/m-i.md) · ` {"unexpected":["A6"]} `',text)
+        self.assertIn('<summary>Error...</summary>',text)
+        self.assertIn('invalid JSON contract',text)
+        self.assertIn('Raw response: {&quot;unexpected&quot;:[&quot;A6&quot;]}',text)
         raw='```\n<answer>|x & y\n'+('long response '*20)
         run['prediction']['raw_response']=raw
         text=summary()
-        self.assertIn('[...](dataset-items/m-i.md)',text)
-        self.assertNotIn('long response '*20,text)
+        self.assertIn('<summary>Error...</summary>',text)
+        self.assertIn('long response '*20,text)
+        self.assertIn('&lt;answer&gt;&#124;x &amp; y',text)
+        self.assertNotIn('<answer>',text)
         full=self.renderer.render_worksheet_detection_report(dataset=dataset,item=item,history=[trial],writer=w,module_id='m')
         self.assertIn(raw,full)
         self.assertIn('## Raw responses for errors',full)
         run['prediction']=None
-        self.assertIn('[Error](dataset-items/m-i.md) · —',summary())
+        self.assertIn('<summary>Error...</summary>',summary())
+        self.assertNotIn('Raw response:',summary())
         run['prediction']={'answer':'wrong'}
-        self.assertIn('"answer": "wrong"',summary())
+        self.assertIn('&quot;answer&quot;: &quot;wrong&quot;',summary())
+
+    def test_dataset_compact_predictions_expand_only_hidden_details(self):
+        from zemi.reporting import _dataset_prediction_cell
+        def render(value, **extra):
+            return _cell(_dataset_prediction_cell({'comparison_prediction': value, **extra}))
+        self.assertEqual(render(['A6:C14']), 'A6:C14')
+        self.assertEqual(render([]), '[]')
+        self.assertEqual(render(None), '—')
+        self.assertEqual(render(['A6:C14'], status='succeeded', metrics={'exact_match': True}), '✅')
+        self.assertEqual(render(None, status='failed'), 'Error')
+        multi = render(['A6:C14', 'D1:E4'])
+        self.assertIn('<summary>A6:C14...</summary>', multi)
+        self.assertIn('D1:E4', multi)
+        self.assertNotIn('href', multi)
+        error = render(None, error='bad <script>|\nerror', prediction={'raw_response': '`x`'})
+        self.assertIn('<summary>Error...</summary>', error)
+        self.assertIn('&lt;script&gt;&#124;&#10;error', error)
+        self.assertNotIn('\n', error)
+        self.assertNotIn('|', error)
+        self.assertIn('Raw response: `x`', error)
 
     def test_detail_navigation_has_one_parent_link(self):
         w = self.writer
@@ -207,7 +232,7 @@ class ReportingTests(unittest.TestCase):
         runs[0]['evaluation_error'] = 'bad range'
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
             history=[trial], writer=w, module_id='m')
-        self.assertIn('[Error](dataset-items/', text)
+        self.assertIn('<summary>Error...</summary>', text)
 
     def test_execution_filenames_do_not_repeat_module_and_kind(self):
         w = self.writer
@@ -237,8 +262,8 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("| Target |", text)
         self.assertIn('| ["A1:B3"] | [] | — |', text)
         self.assertNotIn('["A1:B3"] /', text)
-        self.assertIn('[...](dataset-items/', text)
-        self.assertNotIn('A19:B19', text)
+        self.assertIn('<summary>A1:B1...</summary>', text)
+        self.assertIn('A19:B19', text)
         full = self.renderer.render_worksheet_detection_report(dataset=dataset,
             item=dataset.items[0], history=trials, writer=writer, module_id="m")
         self.assertIn("| Prediction |", full)
