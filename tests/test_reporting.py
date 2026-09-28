@@ -11,6 +11,25 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_dataset_first_column_opens_workbook_second_opens_item_report(self):
+        from types import SimpleNamespace
+        from urllib.parse import quote
+        w = self.writer
+        w.register_module('m')
+        w.register_dataset('m')
+        w.register_item('m', 'sheet')
+        file = w.root / 'Отчет с пробелом.xlsx'
+        file.touch()
+        path = '@inst/' + file.relative_to(env.path.inst).as_posix()
+        item = {'id': 'sheet', 'input': {'workbook_path': path}, 'ground_truth': []}
+        text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),
+            history=[], writer=w, module_id='m')
+        self.assertIn(f'| [sheet]({quote(file.name)}) | [—](dataset-items/m-sheet.md) |', text)
+        file.unlink()
+        text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),
+            history=[], writer=w, module_id='m')
+        self.assertIn('| sheet | [—](dataset-items/m-sheet.md) |', text)
+
     def test_dataset_errors_display_raw_response_and_full_item_text(self):
         from types import SimpleNamespace
         w=self.writer
@@ -96,7 +115,7 @@ class ReportingTests(unittest.TestCase):
         trial = SimpleNamespace(sample=SimpleNamespace(values={}), report_sample_id='s', runs=[run])
         dataset = TrialDataset([item])
         text = self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
-        self.assertIn('| — | positive | negative |',text)
+        self.assertIn('| [—](dataset-items/m-classification.md) | positive | negative |',text)
         detail = self.renderer.render_worksheet_detection_report(dataset=dataset,item=item,history=[trial],writer=w,module_id='m')
         self.assertIn('accuracy / confidence',detail)
         self.assertIn('0.000 / 0.600',detail)
