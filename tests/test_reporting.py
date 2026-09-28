@@ -205,8 +205,11 @@ class ReportingTests(unittest.TestCase):
                  self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[]),
                      history=[SimpleNamespace(sample=SimpleNamespace(values=params),
                          report_sample_id='s', runs=[])], writer=w, module_id='m')]
-        for text in texts:
+        for text in texts[:2]:
             self.assertIn('cell_all_md', text)
+        self.assertIn('[Sample 1](samples/m-sample-s.md)', texts[2])
+        self.assertNotIn('cell_all_md', texts[2])
+        for text in texts:
             self.assertNotIn('@comp/prompts.md', text)
             self.assertNotIn('@comp/encoder.py', text)
         self.assertIn('@comp/prompts.md', self.renderer.render_module_parameters(params=params))
@@ -257,8 +260,10 @@ class ReportingTests(unittest.TestCase):
                        "comparison_prediction": prediction.get("ranges") if prediction else None}]))
         dataset = SimpleNamespace(items=[{"id": "sheet", "ground_truth": ["A1:B3"]}])
         text = self.renderer.render_trial_dataset(dataset=dataset, history=trials, writer=writer, module_id="m")
-        self.assertIn("Sample 1 (s1)", text)
-        self.assertIn("Sample 2 (s2)", text)
+        self.assertIn("[Sample 1](samples/m-sample-s1.md)", text)
+        self.assertIn("[Sample 2](samples/m-sample-s2.md)", text)
+        self.assertNotIn("Sample 1 (", text)
+        self.assertNotIn("Sample 2 (", text)
         self.assertIn("| Target |", text)
         self.assertIn('| ["A1:B3"] | [] | — |', text)
         self.assertNotIn('["A1:B3"] /', text)
