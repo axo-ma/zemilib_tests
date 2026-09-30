@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from zemi import env
 from zemi.conversation import instrument_client, notebook_contexts
-from zemi.report_chat import continue_chat, create_input_session, load_context, prepare_session
+from zemi.report_chat import ChatControls, continue_chat, create_input_session, load_context, prepare_session
 from zemi.report_viewer import render_markdown, write_launcher
 
 
@@ -29,6 +29,56 @@ class ReportChatTests(unittest.TestCase):
             session = create_input_session(input=terminal_input, output=DummyOutput())
             terminal_input.send_text('\x1b[200~First line\nSecond line\x1b[201~\r')
             self.assertEqual(session.prompt('Вы > '), 'First line\nSecond line')
+
+    def test_chat_commands_override_show_and_reset_parameters(self):
+        request = {'model': 'alias', 'temperature': 0.0, 'max_tokens': 1024,
+                   'messages': [{'role': 'user', 'content': 'Sample'},
+                                {'role': 'assistant', 'content': 'Original'}]}
+        controls = ChatControls(request, {'model': 'qwen35_4b', 'context_size': 32768,
+                                          'threads': 4, 'threads_batch': 4,
+                                          'reasoning': 'off'})
+        settings = controls.command('/settings')
+        self.assertIn('temperature          0.0', settings)
+        self.assertIn('source: captured request', settings)
+        self.assertIn('top_p                not set', settings)
+        self.assertIn('source: effective value unknown', settings)
+        self.assertIn('reasoning            "off"', settings)
+        self.assertNotIn('Conversation', settings)
+        self.assertNotIn('messages', settings)
+
+        controls.command('/set temperature 0.7')
+        controls.command('/set top_k 20')
+        controls.command('/reasoning on')
+        controls.command('/set stop ["Input:", "Output:"]')
+        self.assertEqual(request['temperature'], 0.7)
+        self.assertEqual(request['extra_body']['top_k'], 20)
+        self.assertTrue(request['extra_body']['chat_template_kwargs']['enable_thinking'])
+        self.assertEqual(request['stop'], ['Input:', 'Output:'])
+        request['messages'].extend([{'role': 'user', 'content': 'Next'},
+                                    {'role': 'assistant', 'content': 'New'}])
+
+        controls.command('/reset context')
+        self.assertEqual(len(request['messages']), 2)
+        self.assertEqual(request['temperature'], 0.7)
+        self.assertEqual(request['extra_body']['top_k'], 20)
+
+        controls.command('/reset all')
+        self.assertEqual(request, controls.original)
+        self.assertNotIn('extra_body', request)
+        self.assertNotIn('stop', request)
+
+    def test_chat_commands_validate_values_and_reasoning_auto(self):
+        request = {'model': 'alias', 'messages': [{'role': 'user', 'content': 'Sample'}]}
+        controls = ChatControls(request, {'reasoning': 'off'})
+        for command in ('/set top_p 1.2', '/set top_k 2.5', '/set max_tokens 0',
+                        '/set stop [1]', '/reasoning maybe', '/set mystery 1', '/reset'):
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                controls.command(command)
+        controls.command('/reasoning on')
+        controls.command('/reasoning auto')
+        self.assertNotIn('extra_body', request)
+        self.assertIn('reasoning            "off"', controls.settings_text())
+        self.assertIn('source: model configuration', controls.settings_text().splitlines()[2])
 
     def test_capture_uses_exact_messages_response_and_generation_settings(self):
         from zemi import conversation
