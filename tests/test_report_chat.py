@@ -12,7 +12,7 @@ from unittest.mock import patch
 from zemi import env
 from zemi.conversation import instrument_client, notebook_contexts
 from zemi.report_chat import ChatControls, continue_chat, create_input_session, load_context, prepare_session
-from zemi.report_viewer import render_markdown, write_launcher
+from zemi.report_viewer import ICON_PATH, WINDOWS_APP_ID, render_markdown, write_launcher
 
 
 class ReportChatTests(unittest.TestCase):
@@ -138,11 +138,36 @@ class ReportChatTests(unittest.TestCase):
             {'contexts': [context]}, {'contexts': [context]}]}]}), encoding='utf-8')
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(render_markdown(path), 'html.parser')
+        table = soup.select_one('table.dataset-items')
+        self.assertEqual([cell.get_text() for cell in table.select('thead th')[:3]],
+                         ['Item ID', 'Target', 'Matches'])
+        self.assertEqual([cell.get_text() for cell in table.select('tbody td')[:3]],
+                         ['item', '[]', '1 / 2'])
+        self.assertTrue(table.select_one('th:nth-child(1)')['class'] == ['sticky-item'])
+        self.assertTrue(table.select_one('th:nth-child(2)')['class'] == ['sticky-target'])
         self.assertEqual(soup.select_one('summary a')['href'], 'zemi-chat:0:0')
         self.assertEqual(soup.select_one('summary a').get_text(), 'A1:B2...')
         self.assertEqual(soup.select('tbody td')[-1].get_text(), '✅')
         self.assertEqual(soup.select('tbody td')[-1].a['href'], 'zemi-chat:0:1')
         self.assertEqual(soup.pre.get_text(), 'full')
+
+    def test_dataset_viewer_has_windows_icon_asset(self):
+        self.assertEqual(WINDOWS_APP_ID, 'ZEMI.DatasetReport')
+        self.assertTrue(ICON_PATH.is_file())
+        self.assertEqual(ICON_PATH.read_bytes()[:4], b'\x00\x00\x01\x00')
+
+    def test_dataset_viewer_keeps_new_column_order_without_chat_manifest(self):
+        path = self.root / 'new.dataset.md'
+        path.write_text('| Item ID | Target | Matches | Sample 1 |\n|---|---|---|---|\n'
+                        '| sheet | ["A1:B3"] | 1 / 1 | ✅ |\n', encoding='utf-8')
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(render_markdown(path), 'html.parser')
+        table = soup.select_one('table.dataset-items')
+        self.assertEqual([cell.get_text() for cell in table.select('thead th')[:3]],
+                         ['Item ID', 'Target', 'Matches'])
+        self.assertEqual([cell.get_text() for cell in table.select('tbody td')[:3]],
+                         ['sheet', '["A1:B3"]', '1 / 1'])
+        self.assertEqual(table.select_one('td.sticky-target')['title'], '["A1:B3"]')
 
     def test_report_scripts_and_event_handlers_are_not_executable(self):
         path = self.root / 'item.md'

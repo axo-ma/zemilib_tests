@@ -24,11 +24,11 @@ class ReportingTests(unittest.TestCase):
         item = {'id': 'sheet', 'input': {'workbook_path': path}, 'ground_truth': []}
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),
             history=[], writer=w, module_id='m')
-        self.assertIn(f'| [sheet]({quote(file.name)}) | [—](dataset-items/m-sheet.md) |', text)
+        self.assertIn(f'| [sheet]({quote(file.name)}) | [] | [—](dataset-items/m-sheet.md) |', text)
         file.unlink()
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),
             history=[], writer=w, module_id='m')
-        self.assertIn('| sheet | [—](dataset-items/m-sheet.md) |', text)
+        self.assertIn('| sheet | [] | [—](dataset-items/m-sheet.md) |', text)
 
     def test_dataset_errors_display_raw_response_and_full_item_text(self):
         from types import SimpleNamespace
@@ -140,7 +140,7 @@ class ReportingTests(unittest.TestCase):
         trial = SimpleNamespace(sample=SimpleNamespace(values={}), report_sample_id='s', runs=[run])
         dataset = TrialDataset([item])
         text = self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
-        self.assertIn('| [—](dataset-items/m-classification.md) | positive | negative |',text)
+        self.assertIn('| classification | positive | [—](dataset-items/m-classification.md) | negative |',text)
         detail = self.renderer.render_worksheet_detection_report(dataset=dataset,item=item,history=[trial],writer=w,module_id='m')
         self.assertIn('accuracy / confidence',detail)
         self.assertIn('0.000 / 0.600',detail)
@@ -230,8 +230,8 @@ class ReportingTests(unittest.TestCase):
         trial = SimpleNamespace(sample=None, report_sample_id='m-sample-0001', runs=runs)
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
             history=[trial], writer=w, module_id='m')
-        self.assertIn('| ["A1:B3"] | ✅ |', text)
-        self.assertIn('| [] | ✅ |', text)
+        self.assertIn('| ["A1:B3"] | [1 / 1](dataset-items/m-table.md) | ✅ |', text)
+        self.assertIn('| [] | [1 / 1](dataset-items/m-empty.md) | ✅ |', text)
         runs[0]['evaluation_error'] = 'bad range'
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
             history=[trial], writer=w, module_id='m')
@@ -264,8 +264,9 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("[Sample 2](samples/m-sample-s2.md)", text)
         self.assertNotIn("Sample 1 (", text)
         self.assertNotIn("Sample 2 (", text)
-        self.assertIn("| Target |", text)
-        self.assertIn('| ["A1:B3"] | [] | — |', text)
+        self.assertIn("| Item ID | Target | Matches |", text)
+        self.assertIn('| ["A1:B3"] |', text)
+        self.assertIn('| [] | — |', text)
         self.assertNotIn('["A1:B3"] /', text)
         self.assertIn('<summary>A1:B1...</summary>', text)
         self.assertIn('A19:B19', text)
