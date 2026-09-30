@@ -24,6 +24,14 @@ class ReportingTests(unittest.TestCase):
         item = {'id': 'sheet', 'input': {'workbook_path': path}, 'ground_truth': []}
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),
             history=[], writer=w, module_id='m')
+        self.assertIn('| # | Item ID | Target | Matches |', text)
+        self.assertIn('| [1](dataset-items/m-sheet.md) |', text)
+        w.register_item('m', 'second')
+        w.register_item('m', 'sheet')
+        self.assertEqual(w.item_number('m', 'sheet'), 1)
+        self.assertEqual(w.item_number('m', 'second'), 2)
+        self.assertIn('**Item #:** 1', self.renderer.render_run_report(
+            run={'dataset_item_id': 'sheet'}, writer=w, module_id='m'))
         self.assertIn(f'| [sheet]({quote(file.name)}) | [] | [—](dataset-items/m-sheet.md) |', text)
         file.unlink()
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=[item]),

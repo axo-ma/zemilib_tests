@@ -156,6 +156,19 @@ class ReportChatTests(unittest.TestCase):
         self.assertTrue(ICON_PATH.is_file())
         self.assertEqual(ICON_PATH.read_bytes()[:4], b'\x00\x00\x01\x00')
 
+    def test_numbered_dataset_preserves_chat_column_mapping(self):
+        path = self.root / 'numbered.dataset.md'
+        path.write_text('| # | Item ID | Target | Matches | Sample 1 |\n'
+                        '|---|---|---|---|---|\n| 1 | item | [] | 1 / 1 | ✅ |\n', encoding='utf-8')
+        path.with_suffix('.chat.json').write_text(json.dumps({'rows': [
+            {'item_id': 'item', 'cells': [{'contexts': [{'source': {'model_name': 'm'}}]}]}]}), encoding='utf-8')
+        from bs4 import BeautifulSoup
+        table = BeautifulSoup(render_markdown(path), 'html.parser').select_one('table.dataset-items')
+        self.assertEqual(table.select_one('td.sticky-number').get_text(), '1')
+        self.assertEqual(table.select_one('td.sticky-item').get_text(), 'item')
+        self.assertEqual(table.select_one('td.sticky-target').get_text(), '[]')
+        self.assertEqual(table.select('tbody td')[-1].a['href'], 'zemi-chat:0:0')
+
     def test_dataset_viewer_keeps_new_column_order_without_chat_manifest(self):
         path = self.root / 'new.dataset.md'
         path.write_text('| Item ID | Target | Matches | Sample 1 |\n|---|---|---|---|\n'
