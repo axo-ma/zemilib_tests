@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from zemi import env
 from zemi.conversation import instrument_client, notebook_contexts
-from zemi.report_chat import continue_chat, load_context, prepare_session
+from zemi.report_chat import continue_chat, create_input_session, load_context, prepare_session
 from zemi.report_viewer import render_markdown, write_launcher
 
 
@@ -21,6 +21,14 @@ class ReportChatTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(dir=env.path.tmp)
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
+
+    def test_pasted_multiline_request_is_one_message(self):
+        from prompt_toolkit.input.defaults import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        with create_pipe_input() as terminal_input:
+            session = create_input_session(input=terminal_input, output=DummyOutput())
+            terminal_input.send_text('\x1b[200~First line\nSecond line\x1b[201~\r')
+            self.assertEqual(session.prompt('Вы > '), 'First line\nSecond line')
 
     def test_capture_uses_exact_messages_response_and_generation_settings(self):
         from zemi import conversation
