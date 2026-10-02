@@ -11,6 +11,20 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_all_report_kinds_have_html_pairs_and_html_navigation(self):
+        w=self.writer
+        w.register_module('m',optimized=True)
+        w.register_sample('m','s')
+        w.register_item('m','i')
+        w.register_module_runs('m')
+        w.register_review('m')
+        for source in w.root.rglob('*.md'):
+            self.assertTrue(source.with_suffix('.html').is_file(),str(source))
+        sample=w.root/w.ref('sample','m','s').path
+        self.assertIn('.md)',sample.read_text(encoding='utf-8'))
+        self.assertIn('href="../m.html"',sample.with_suffix('.html').read_text(encoding='utf-8'))
+        self.assertEqual([p.name for p in w.root.rglob('*.cmd')],['m.cmd'])
+
     def test_combined_module_exports_and_best_score_ties(self):
         import json
         from types import SimpleNamespace
@@ -38,7 +52,8 @@ class ReportingTests(unittest.TestCase):
         soup = BeautifulSoup(markup, 'html.parser')
         self.assertEqual(len(soup.select('table.dataset-items .best-sample')), 2)
         self.assertIn('0.900', soup.select('table.dataset-items th')[-1].get_text())
-        self.assertIsNone(soup.find('script'))
+        self.assertIn('zemi_report_action', markup)
+        self.assertIn('window.zemiBridge', markup)
         model = json.loads((w.root / 'm.json').read_text(encoding='utf-8'))
         self.assertEqual(model['samples'][0]['score'], 0.4)
         self.assertEqual(model['sections'][0]['name'], 'module_samples_summary')

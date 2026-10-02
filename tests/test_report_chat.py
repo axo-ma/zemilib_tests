@@ -145,8 +145,9 @@ class ReportChatTests(unittest.TestCase):
                          ['item', '[]', '1 / 2'])
         self.assertTrue(table.select_one('th:nth-child(1)')['class'] == ['sticky-item'])
         self.assertTrue(table.select_one('th:nth-child(2)')['class'] == ['sticky-target'])
-        self.assertEqual(soup.select_one('summary a')['href'], 'zemi-chat:0:0')
-        self.assertEqual(soup.select_one('summary a').get_text(), 'A1:B2...')
+        self.assertIsNone(soup.select_one('summary a'))
+        self.assertEqual(soup.summary.get_text(), 'A1:B2...')
+        self.assertEqual(soup.select_one('details a')['href'], 'zemi-chat:0:0')
         self.assertEqual(soup.select('tbody td')[-1].get_text(), '✅')
         self.assertEqual(soup.select('tbody td')[-1].a['href'], 'zemi-chat:0:1')
         self.assertEqual(soup.pre.get_text(), 'full')
@@ -181,6 +182,25 @@ class ReportChatTests(unittest.TestCase):
         self.assertEqual([cell.get_text() for cell in table.select('tbody td')[:3]],
                          ['sheet', '["A1:B3"]', '1 / 1'])
         self.assertEqual(table.select_one('td.sticky-target')['title'], '["A1:B3"]')
+
+    def test_combined_module_uses_compact_sample_and_item_layouts(self):
+        path = self.root / 'module.md'
+        path.write_text('## Samples\n\n| Sample | Parameters | Score |\n|---|---|---|\n'
+                        '| 1 | all | 0.936 |\n\n## Items\n\n'
+                        '| # | Item ID | Target | Matches | Sample 1 |\n|---|---|---|---|---|\n'
+                        '| 1 | sheet | ["A1:B4"] | 1 / 1 | ✅ |\n', encoding='utf-8')
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(render_markdown(path, bridge=False), 'html.parser')
+        samples = soup.select_one('table.module-samples')
+        self.assertEqual(samples.select_one('td.sample-number').get_text(), '1')
+        items = soup.select_one('table.dataset-items.numbered')
+        self.assertEqual(items.select_one('.target-value').get_text(), '["A1:B4"]')
+        self.assertEqual(items.select_one('td.sticky-item').get_text(), 'sheet')
+        self.assertEqual(items.select_one('td.sticky-target')['title'], '["A1:B4"]')
+        from zemi.report_viewer import CSS
+        self.assertNotIn('min-width:100%', CSS)
+        self.assertNotIn('table:not(.dataset-items)', CSS)
+        self.assertIn('.module-samples .sample-number', CSS)
 
     def test_report_scripts_and_event_handlers_are_not_executable(self):
         path = self.root / 'item.md'
