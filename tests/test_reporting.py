@@ -11,6 +11,57 @@ from zemi import env
 
 
 class ReportingTests(unittest.TestCase):
+    def test_combined_module_exports_and_best_score_ties(self):
+        import json
+        from types import SimpleNamespace
+        from bs4 import BeautifulSoup
+        w = self.writer
+        w.register_module('m', optimized=True)
+        self.assertEqual(w.register_dataset('m'), w.ref('module', 'm'))
+        w.register_item('m', 'i')
+        history = []
+        for n, score in enumerate([0.4, 0.9, 0.9], 1):
+            sid = f's{n}'
+            w.register_sample('m', sid)
+            history.append(SimpleNamespace(report_sample_id=sid, score=score, runs=[]))
+        w.write_module_samples_summary('m', '## Samples\n\nTest samples')
+        w.write_trial_dataset('m', self.renderer.render_trial_dataset(
+            dataset=SimpleNamespace(items=[{'id': 'i', 'ground_truth': []}]),
+            history=history, writer=w, module_id='m'))
+        w.write_module_data('m', {'samples': [{'number': 1, 'score': 0.4}]})
+        source = (w.root / 'm.md').read_text(encoding='utf-8')
+        self.assertLess(source.index('## Samples'), source.index('## Items'))
+        self.assertFalse((w.root / 'm.dataset.md').exists())
+        self.assertFalse((w.root / 'm.dataset.cmd').exists())
+        self.assertIn('%~dp0m.html', (w.root / 'm.cmd').read_text(encoding='utf-8'))
+        markup = (w.root / 'm.html').read_text(encoding='utf-8')
+        soup = BeautifulSoup(markup, 'html.parser')
+        self.assertEqual(len(soup.select('table.dataset-items .best-sample')), 2)
+        self.assertIn('0.900', soup.select('table.dataset-items th')[-1].get_text())
+        self.assertIsNone(soup.find('script'))
+        model = json.loads((w.root / 'm.json').read_text(encoding='utf-8'))
+        self.assertEqual(model['samples'][0]['score'], 0.4)
+        self.assertEqual(model['sections'][0]['name'], 'module_samples_summary')
+
+    def test_notebook_retention_preserves_failures_and_rejects_outside_paths(self):
+        from zemi.execution import retain_sample_notebooks
+        runs, entries = [], []
+        for n, status in enumerate(['failed', 'succeeded', 'succeeded', 'succeeded']):
+            name = f'{n}.ipynb'
+            (self.writer.root / name).write_text('{}', encoding='utf-8')
+            runs.append({'status': status, 'artifacts': {'output_notebook': name}})
+            entries.append({'output_notebook': name, 'output_path': name})
+        runs[-1]['evaluation_error'] = 'bad response'
+        retain_sample_notebooks(runs, entries, self.writer.root)
+        self.assertTrue((self.writer.root / '0.ipynb').exists())
+        self.assertTrue((self.writer.root / '1.ipynb').exists())
+        self.assertFalse((self.writer.root / '2.ipynb').exists())
+        self.assertTrue((self.writer.root / '3.ipynb').exists())
+        self.assertNotIn('output_notebook', runs[2]['artifacts'])
+        self.assertIsNone(entries[2]['output_notebook'])
+        with self.assertRaises(ValueError):
+            retain_sample_notebooks([{'status': 'succeeded', 'artifacts': {'output_notebook': '../outside.ipynb'}}], [], self.writer.root)
+
     def test_dataset_first_column_opens_workbook_second_opens_item_report(self):
         from types import SimpleNamespace
         from urllib.parse import quote
@@ -103,8 +154,8 @@ class ReportingTests(unittest.TestCase):
         w.write_sample_trial('m','s','## Runs\n\n[Run r](../runs/m-run-r.md)')
         expected = [('sample','s','[Back to Module Report](../m.md)'),
                     ('module_runs',None,'[Back to Module Report](m.md)'),
-                    ('run','r','[Back to Runs Report](../m.runs.md)'),
-                    ('item','i','[Back to Dataset Report](../m.dataset.md)')]
+                    ('run','r','[Back to Module Report](m.md)'),
+                    ('item','i','[Back to Module Report](../m.md)')]
         for kind,identity,link in expected:
             text=(w.root / w.ref(kind,'m',identity).path).read_text(encoding='utf-8')
             self.assertEqual(text.splitlines()[2],link)
@@ -113,7 +164,7 @@ class ReportingTests(unittest.TestCase):
         ref=w.register_run('single','only')
         self.assertTrue((w.root / w.ref('module_runs','single').path).is_file())
         self.assertEqual((w.root/ref.path).read_text(encoding='utf-8').splitlines()[2],
-                         '[Back to Runs Report](../single.runs.md)')
+                         '[Back to Module Report](single.md)')
 
     def test_sample_duration_sums_lm_times_and_keeps_missing_values(self):
         w=self.writer
@@ -249,7 +300,7 @@ class ReportingTests(unittest.TestCase):
         w = self.writer
         w.register_module('m')
         self.assertEqual(w.register_sample('m', 'm-sample-0001').path, 'samples/m-sample-0001.md')
-        self.assertEqual(w.register_run('m', 'm-run-000001').path, 'runs/m-run-000001.md')
+        self.assertEqual(w.register_run('m', 'm-run-000001').path, 'm.runs.md')
         self.assertEqual(w.register_sample('m', 'custom').path, 'samples/m-sample-custom.md')
 
     def test_dataset_sample_columns_show_expected_and_actual_ranges(self):
@@ -429,8 +480,8 @@ class ReportingTests(unittest.TestCase):
         run_text = (writer.root / run.path).read_text(encoding="utf-8")
         sample_text = (writer.root / sample.path).read_text(encoding="utf-8")
         self.assertNotIn("**Status:** running", run_text)
-        self.assertIn("model unavailable", run_text)
-        self.assertIn("[Back to Runs Report](../m.runs.md)", run_text)
+        self.assertFalse((writer.root / 'runs').exists())
+        self.assertIn("[Back to Module Report](m.md)", run_text)
         self.assertEqual(sample_text.splitlines()[2], "[Back to Module Report](../m.md)")
 
     def test_set_evaluation_permutation_duplicates_and_extra(self):

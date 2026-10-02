@@ -255,7 +255,7 @@ path = "@comp/data.json"
         self.assertIn('model unavailable', sample_report.read_text(encoding='utf-8'))
         self.assertIn('../dataset-items/detect-s.md', sample_report.read_text(encoding='utf-8'))
         progress = progress_report.read_text(encoding='utf-8')
-        self.assertIn(f'({dataset_report.name})', progress)
+        self.assertIn(f'({dataset_report.name}#items)', progress)
         self.assertIn('## Module Optimization Progress', progress)
         self.assertIn('## Selected Sample', progress)
         self.assertIn('Matches', dataset_report.read_text(encoding='utf-8'))
@@ -289,8 +289,16 @@ path = "@comp/data.json"
         self.assertEqual(parent['samples'][0]['metrics']['fn'], 1)
         self.assertEqual(parent['samples'][0]['metrics']['correct_empty'], 1, parent['samples'][0]['runs'])
         for run in parent['samples'][0]['runs']:
-            self.assertTrue((component.run_directory / run['artifacts']['output_notebook']).is_file())
+            if run['artifacts'].get('output_notebook'):
+                self.assertTrue((component.run_directory / run['artifacts']['output_notebook']).is_file())
             self.assertEqual(run['prediction']['ranges'], [])
+        self.assertEqual(sum(bool(r['artifacts'].get('output_notebook')) for r in parent['samples'][0]['runs']), 1)
+        self.assertFalse((component.run_directory / 'runs').exists())
+        self.assertFalse(list(component.run_directory.glob('*.dataset.md')))
+        module_json = json.loads((component.run_directory / 'detect.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(module_json['items']), 2)
+        self.assertEqual(len(module_json['samples'][0]['runs']), 2)
+        self.assertTrue((component.run_directory / 'detect.html').is_file())
         self.assertEqual(len({r['prediction']['pid'] for r in parent['samples'][0]['runs']}), 1)
         self.assertFalse(component._module_kernels)
 
@@ -314,7 +322,8 @@ path = "@comp/data.json"
         self.assertNotEqual(trials[0]['output_params']['pid'], trials[1]['output_params']['pid'])
         self.assertEqual(len({t['output_params']['pid'] for t in trials[1:]}), 1)
         self.assertFalse(component._module_kernels)
-        self.assertTrue(all((component.run_directory / t['output_notebook']).is_file() for t in trials))
+        self.assertTrue(all((component.run_directory / t['output_notebook']).is_file()
+                            for t in trials if t.get('output_notebook')))
 
     def test_reuse_kernel_can_be_disabled(self):
         import nbformat
