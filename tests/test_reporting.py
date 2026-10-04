@@ -120,13 +120,13 @@ class ReportingTests(unittest.TestCase):
         def summary():
             return self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
         text=summary()
-        self.assertIn('<summary>Error...</summary>',text)
+        self.assertIn('<summary style="color:#ef4444">Error</summary>',text)
         self.assertIn('invalid JSON contract',text)
         self.assertIn('Raw response: {&quot;unexpected&quot;:[&quot;A6&quot;]}',text)
         raw='```\n<answer>|x & y\n'+('long response '*20)
         run['prediction']['raw_response']=raw
         text=summary()
-        self.assertIn('<summary>Error...</summary>',text)
+        self.assertIn('<summary style="color:#ef4444">Error</summary>',text)
         self.assertIn('long response '*20,text)
         self.assertIn('&lt;answer&gt;&#124;x &amp; y',text)
         self.assertNotIn('<answer>',text)
@@ -134,7 +134,7 @@ class ReportingTests(unittest.TestCase):
         self.assertIn(raw,full)
         self.assertIn('## Raw responses for errors',full)
         run['prediction']=None
-        self.assertIn('<summary>Error...</summary>',summary())
+        self.assertIn('<summary style="color:#ef4444">Error</summary>',summary())
         self.assertNotIn('Raw response:',summary())
         run['prediction']={'answer':'wrong'}
         self.assertIn('&quot;answer&quot;: &quot;wrong&quot;',summary())
@@ -147,13 +147,13 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(render([]), '[]')
         self.assertEqual(render(None), '—')
         self.assertEqual(render(['A6:C14'], status='succeeded', metrics={'exact_match': True}), '✅')
-        self.assertEqual(render(None, status='failed'), 'Error')
+        self.assertIn('Execution failure', render(None, status='failed'))
         multi = render(['A6:C14', 'D1:E4'])
         self.assertIn('<summary>A6:C14...</summary>', multi)
         self.assertIn('D1:E4', multi)
         self.assertNotIn('href', multi)
         error = render(None, error='bad <script>|\nerror', prediction={'raw_response': '`x`'})
-        self.assertIn('<summary>Error...</summary>', error)
+        self.assertIn('<summary style="color:#ef4444">Error</summary>', error)
         self.assertIn('&lt;script&gt;&#124;&#10;error', error)
         self.assertNotIn('\n', error)
         self.assertNotIn('|', error)
@@ -309,7 +309,7 @@ class ReportingTests(unittest.TestCase):
         runs[0]['evaluation_error'] = 'bad range'
         text = self.renderer.render_trial_dataset(dataset=SimpleNamespace(items=items),
             history=[trial], writer=w, module_id='m')
-        self.assertIn('<summary>Error...</summary>', text)
+        self.assertIn('<summary style="color:#ef4444">Error</summary>', text)
 
     def test_execution_filenames_do_not_repeat_module_and_kind(self):
         w = self.writer
