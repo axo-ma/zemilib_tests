@@ -121,8 +121,8 @@ class ReportingTests(unittest.TestCase):
             return self.renderer.render_trial_dataset(dataset=dataset,history=[trial],writer=w,module_id='m')
         text=summary()
         self.assertIn('<summary class="run-error">Error</summary>',text)
-        self.assertIn('invalid JSON contract',text)
-        self.assertIn('Raw response: {&quot;unexpected&quot;:[&quot;A6&quot;]}',text)
+        self.assertNotIn('invalid JSON contract',text)
+        self.assertIn('<pre>{&quot;unexpected&quot;:[&quot;A6&quot;]}</pre>',text)
         raw='```\n<answer>|x & y\n'+('long response '*20)
         run['prediction']['raw_response']=raw
         text=summary()
@@ -157,7 +157,7 @@ class ReportingTests(unittest.TestCase):
         self.assertIn('&lt;script&gt;&#124;&#10;error', error)
         self.assertNotIn('\n', error)
         self.assertNotIn('|', error)
-        self.assertIn('Raw response: `x`', error)
+        self.assertIn('Raw response: &#96;x&#96;', error)
 
     def test_detail_navigation_has_one_parent_link(self):
         w = self.writer

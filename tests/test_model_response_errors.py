@@ -18,7 +18,9 @@ class ModelResponseErrorTests(unittest.TestCase):
         self.assertEqual(metrics['fn'], 1)
         self.assertEqual(run['status'], 'succeeded')
         cell = _dataset_prediction_cell(run)
-        self.assertIn('Model response error', cell)
+        self.assertIn('Error</summary>', cell)
+        self.assertNotIn('Reason:', cell)
+        self.assertNotIn('Raw response:', cell)
         self.assertIn('Explanation &lt;script&gt;', cell)
         self.assertNotIn('Execution failure', cell)
 
